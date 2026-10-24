@@ -1,0 +1,18 @@
+{
+  "name": "mad-lab-panel",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Painel MAD-Lab — player scrcpy 4.1 empacotado localmente (sem CDN)",
+  "type": "module",
+  "scripts": {
+    "build": "esbuild src/scrcpy-client.js --bundle --format=iife --global-name=ScrcpyPanel --target=es2022 --minify --legal-comments=none --outfile=static/scrcpy-bundle.js"
+  },
+  "dependencies": {
+    "@yume-chan/scrcpy": "3.0.0-beta.4",
+    "@yume-chan/scrcpy-decoder-webcodecs": "3.0.0-beta.4",
+    "@yume-chan/stream-extra": "3.0.0-beta.4"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.0"
+  }
+}

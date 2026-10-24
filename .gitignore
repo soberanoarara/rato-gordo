@@ -1,0 +1,21 @@
+# Segurança
+.env
+*.env
+!/.env.example
+
+# Android
+android-app/app/build/
+android-app/.gradle/
+android-app/local.properties
+*.apk
+*.keystore
+
+# Python
+server/venv/
+__pycache__/
+*.pyc
+audit.log
+
+# Node
+panel/node_modules/
+panel/static/scrcpy-bundle.js

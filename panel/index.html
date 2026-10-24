@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MAD-Lab — Painel de Demonstração</title>
+<link rel="stylesheet" href="/static/leaflet.css">
+<style>
+  :root {
+    --bg: #0d1117; --panel: #161b22; --border: #30363d;
+    --text: #e6edf3; --muted: #8b949e; --accent: #2f81f7;
+    --ok: #3fb950; --warn: #d29922; --err: #f85149;
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family: system-ui, sans-serif; background:var(--bg); color:var(--text); }
+  header { display:flex; align-items:center; gap:16px; padding:10px 16px;
+           background:var(--panel); border-bottom:1px solid var(--border); }
+  header h1 { font-size:16px; margin:0; }
+  header .badge { font-size:12px; padding:2px 10px; border-radius:12px;
+                  background:var(--border); color:var(--muted); }
+  header .badge.on { color:var(--ok); }
+  header .badge.off { color:var(--err); }
+
+    /* grelha principal: 1 coluna estreita (dispositivos/ações)
+     + vídeo + mapa largo à direita */
+  #main {
+    display: grid;
+    grid-template-columns: 20% 40% 40%;
+    grid-template-rows: 1fr 220px;
+    gap: 12px;
+    padding: 12px;
+    height: calc(100vh - 46px);
+  }
+  .card { background:var(--panel); border:1px solid var(--border);
+          border-radius:10px; overflow:hidden; display:flex;
+          flex-direction:column; min-height:0; }
+  .card h2 { font-size:13px; margin:0; padding:10px 12px;
+             border-bottom:1px solid var(--border); color:var(--muted);
+             text-transform:uppercase; letter-spacing:.5px; }
+
+  /* dispositivos */
+  #devices-list { flex:1; overflow:auto; padding:8px; display:flex;
+                  flex-direction:column; gap:8px; }
+  .device { border:1px solid var(--border); border-radius:8px; padding:10px;
+            cursor:pointer; }
+  .device.selected { border-color:var(--accent); background:#1a2740; }
+  .device .name { font-weight:600; margin-bottom:6px; word-break:break-all; }
+  .device .name .tag { color:var(--warn); font-weight:400; }
+  .device .row { display:flex; align-items:center; gap:6px; font-size:12px;
+                 color:var(--muted); margin:2px 0; }
+  .device .err { font-size:11px; color:var(--err); margin-top:6px;
+                 word-break:break-word; }
+  .dot { width:8px; height:8px; border-radius:50%; background:var(--err); }
+  .dot.on { background:var(--ok); }
+  .empty { color:var(--muted); font-size:13px; text-align:center;
+           padding:24px 8px; }
+
+  /* vídeo: o <canvas> é inserido pelo player (scrcpy-bundle.js) */
+  #video-box { flex:1; min-height:0; display:flex; align-items:center;
+               justify-content:center; background:#000; position:relative; }
+  #video-box canvas { width:100%; height:100%; object-fit:contain;
+                      cursor:crosshair; }
+  #video-hint { position:absolute; bottom:8px; left:8px; right:8px;
+                font-size:11px; color:var(--muted); background:#000a;
+                padding:2px 8px; border-radius:4px; pointer-events:none; }
+
+  /* mapa */
+    /* mapa ocupa toda a coluna 3; Leaflet preenche o container */
+  #map-card #map {
+    flex: 1;
+    width: 100%;
+    min-height: 0;           /* deixa o flex encolher corretamente */
+    background: #0a0d12;
+  }
+
+  /* ações */
+  #actions { display:flex; flex-direction:column; gap:8px; padding:10px;
+             overflow:auto; }
+  .actions-row { display:flex; gap:8px; }
+  button { background:#21262d; color:var(--text); border:1px solid var(--border);
+           border-radius:6px; padding:8px 14px; cursor:pointer; font-size:14px; }
+  button:hover { background:#30363d; }
+  button:disabled { opacity:.4; cursor:not-allowed; }
+  button.primary { background:var(--accent); border-color:var(--accent); }
+  #type-input { flex:1; min-width:0; background:#0d1117; color:var(--text);
+                border:1px solid var(--border); border-radius:6px;
+                padding:8px 10px; font-size:14px; }
+  #action-log { font-size:11px; color:var(--muted); max-height:60px;
+                overflow:auto; margin:0; padding:0 2px; }
+  .log-ok { color:var(--ok); } .log-err { color:var(--err); }
+</style>
+</head>
+<body>
+<header>
+  <h1>MAD-Lab</h1>
+  <span class="badge" id="conn-badge">a ligar…</span>
+  <span style="flex:1"></span>
+  <span class="badge" id="clock"></span>
+</header>
+
+<div id="main">
+
+  <!-- coluna 1, linha 1: dispositivos -->
+  <div class="card" id="devices-card" style="grid-column:1; grid-row:1;">
+    <h2>Dispositivos</h2>
+    <div id="devices-list">
+      <div class="empty">Nenhum dispositivo detetado.<br>
+        Ative o espelhamento ou o app no dispositivo de teste.</div>
+    </div>
+  </div>
+
+  <!-- coluna 2, linhas 1-2: vídeo -->
+  <div class="card" id="video-card" style="grid-column:2; grid-row:1 / span 2;">
+    <h2>Ecrã do dispositivo</h2>
+    <div id="video-box">
+      <span id="video-hint">clique no ecrã para enviar um tap</span>
+    </div>
+  </div>
+
+  <!-- coluna 3, linhas 1-2: mapa (toda a direita) -->
+  <div class="card" id="map-card" style="grid-column:3; grid-row:1 / span 2;">
+    <h2>Localização em tempo real — Maputo → Manhiça</h2>
+    <div id="map"></div>
+  </div>
+
+  <!-- coluna 1, linha 2: controlo remoto -->
+  <div class="card" id="actions-card" style="grid-column:1; grid-row:2;">
+    <h2>Controlo remoto</h2>
+    <div id="actions">
+      <div class="actions-row">
+        <input id="type-input" placeholder="Escrever texto…">
+        <button class="primary" id="btn-type">Enviar</button>
+      </div>
+      <div class="actions-row">
+        <button id="btn-back">◀</button>
+        <button id="btn-home">⌂</button>
+        <button id="btn-volup">▲</button>
+        <button id="btn-voldown">▼</button>
+        <button id="btn-power">⏻</button>
+      </div>
+      <div class="actions-row">
+        <button id="btn-swipe-up">↑ Swipe</button>
+        <button id="btn-swipe-down">↓ Swipe</button>
+      </div>
+      <pre id="action-log"></pre>
+    </div>
+  </div>
+
+</div>
+
+<!-- Tudo local: nada é carregado de CDNs.
+     scrcpy-bundle.js é gerado por `npm run build` (ver panel/package.json) -->
+<script src="/static/leaflet.js"></script>
+<script src="/static/scrcpy-bundle.js"></script>
+<script src="/app.js"></script>
+</body>
+</html>

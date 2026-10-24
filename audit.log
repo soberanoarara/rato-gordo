@@ -1,0 +1,66 @@
+1792137267.892512 44305a324c503098 ERROR ['shell', 'input', 'keyevent', '25'] unexpected kwargs: timeout
+1792138449.103536 44305a324c503098 ERROR ['shell', 'input', 'swipe', '540', '600', '540', '1600', '300'] unexpected kwargs: timeout
+1792138450.9297695 44305a324c503098 ERROR ['shell', 'input', 'swipe', '540', '1600', '540', '600', '300'] unexpected kwargs: timeout
+1792138453.6351612 44305a324c503098 ERROR ['shell', 'input', 'keyevent', '3'] unexpected kwargs: timeout
+1792332480.7623806 44305a324c503098 ERROR ['shell', 'input', 'keyevent', '24'] unexpected kwargs: timeout
+1792332590.1260414 44305a324c503098 ERROR ['shell', 'input', 'keyevent', '26'] unexpected kwargs: timeout
+1792332598.9477723 44305a324c503098 ERROR ['shell', 'input', 'swipe', '540', '1600', '540', '600', '300'] unexpected kwargs: timeout
+1792332600.102179 44305a324c503098 ERROR ['shell', 'input', 'swipe', '540', '600', '540', '1600', '300'] unexpected kwargs: timeout
+1792332602.4176939 44305a324c503098 ERROR ['shell', 'input', 'swipe', '540', '1600', '540', '600', '300'] unexpected kwargs: timeout
+1792332605.7135024 44305a324c503098 ERROR ['shell', 'input', 'swipe', '540', '600', '540', '1600', '300'] unexpected kwargs: timeout
+1792332627.8508337 44305a324c503098 ERROR ['shell', 'input', 'keyevent', '26'] unexpected kwargs: timeout
+1792333391.9981046 44305a324c503098 ERROR ['shell', 'input', 'keyevent', '24'] unexpected kwargs: timeout
+1792333394.5213037 44305a324c503098 ERROR ['shell', 'input', 'keyevent', '3'] unexpected kwargs: timeout
+1792333398.887503 44305a324c503098 ERROR ['shell', 'input', 'keyevent', '4'] unexpected kwargs: timeout
+1792333427.7613738 44305a324c503098 ERROR ['shell', 'input', 'text', 'home'] unexpected kwargs: timeout
+1792335353.218194 44305a324c503098 ERROR ['shell', 'input', 'swipe', '540', '1600', '540', '600', '300'] unexpected kwargs: timeout
+1792335353.3882413 44305a324c503098 ERROR ['shell', 'input', 'swipe', '540', '1600', '540', '600', '300'] unexpected kwargs: timeout
+1792335353.616574 44305a324c503098 ERROR ['shell', 'input', 'swipe', '540', '1600', '540', '600', '300'] unexpected kwargs: timeout
+1792335355.0237303 44305a324c503098 ERROR ['shell', 'input', 'keyevent', '24'] unexpected kwargs: timeout
+1792335355.186955 44305a324c503098 ERROR ['shell', 'input', 'keyevent', '24'] unexpected kwargs: timeout
+1792335355.4152675 44305a324c503098 ERROR ['shell', 'input', 'keyevent', '24'] unexpected kwargs: timeout
+1792335356.3720691 44305a324c503098 ERROR ['shell', 'input', 'keyevent', '25'] unexpected kwargs: timeout
+1792335356.5981085 44305a324c503098 ERROR ['shell', 'input', 'keyevent', '25'] unexpected kwargs: timeout
+1792335357.6478426 44305a324c503098 ERROR ['shell', 'input', 'keyevent', '4'] unexpected kwargs: timeout
+1792335357.863823 44305a324c503098 ERROR ['shell', 'input', 'keyevent', '4'] unexpected kwargs: timeout
+1792335358.8742328 44305a324c503098 ERROR ['shell', 'input', 'swipe', '540', '600', '540', '1600', '300'] unexpected kwargs: timeout
+1792335359.0329702 44305a324c503098 ERROR ['shell', 'input', 'swipe', '540', '600', '540', '1600', '300'] unexpected kwargs: timeout
+1792335359.1998062 44305a324c503098 ERROR ['shell', 'input', 'swipe', '540', '600', '540', '1600', '300'] unexpected kwargs: timeout
+1792335359.359879 44305a324c503098 ERROR ['shell', 'input', 'swipe', '540', '600', '540', '1600', '300'] unexpected kwargs: timeout
+1792335359.546083 44305a324c503098 ERROR ['shell', 'input', 'swipe', '540', '600', '540', '1600', '300'] unexpected kwargs: timeout
+1792335360.4226782 44305a324c503098 ERROR ['shell', 'input', 'swipe', '540', '1600', '540', '600', '300'] unexpected kwargs: timeout
+1792335360.6478057 44305a324c503098 ERROR ['shell', 'input', 'swipe', '540', '1600', '540', '600', '300'] unexpected kwargs: timeout
+1792520701.8337467 44305a324c503098 OK ['shell', 'input', 'keyevent', '26'] 
+1792520707.6217997 44305a324c503098 OK ['shell', 'input', 'keyevent', '25'] 
+1792520709.7052467 44305a324c503098 OK ['shell', 'input', 'keyevent', '24'] 
+1792520713.7945545 44305a324c503098 OK ['shell', 'input', 'keyevent', '4'] 
+1792522164.968559 44305a324c503098 OK ['shell', 'input', 'tap', '122', '109'] 
+1792522344.0004802 44305a324c503098 OK ['shell', 'input', 'tap', '58', '82'] 
+1792522345.4810467 44305a324c503098 OK ['shell', 'input', 'tap', '122', '140'] 
+1792570247.1635313 44305a324c503098 OK ['shell', 'input', 'tap', '245', '57'] 
+1792570247.661036 44305a324c503098 OK ['shell', 'input', 'tap', '245', '57'] 
+1792570248.1777275 44305a324c503098 OK ['shell', 'input', 'tap', '245', '57'] 
+1792570248.7153008 44305a324c503098 OK ['shell', 'input', 'tap', '245', '57'] 
+1792570249.2404237 44305a324c503098 OK ['shell', 'input', 'tap', '245', '57'] 
+1792570249.7571824 44305a324c503098 OK ['shell', 'input', 'tap', '245', '57'] 
+1792570253.0305665 44305a324c503098 OK ['shell', 'input', 'tap', '278', '49'] 
+1792570322.3237126 44305a324c503098 OK ['shell', 'input', 'tap', '181', '2'] 
+1792570322.8083138 44305a324c503098 OK ['shell', 'input', 'tap', '181', '2'] 
+1792570455.0771744 44305a324c503098 OK ['shell', 'input', 'tap', '161', '7'] 
+1792570471.0536938 44305a324c503098 OK ['shell', 'input', 'tap', '117', '76'] 
+1792570472.2789395 44305a324c503098 OK ['shell', 'input', 'tap', '174', '80'] 
+1792570475.3341005 44305a324c503098 OK ['shell', 'input', 'tap', '174', '80'] 
+1792570475.8145041 44305a324c503098 OK ['shell', 'input', 'tap', '174', '80'] 
+1792570476.4045203 44305a324c503098 OK ['shell', 'input', 'tap', '174', '80'] 
+1792570489.3755615 44305a324c503098 OK ['shell', 'input', 'tap', '201', '26'] 
+1792570561.844179 44305a324c503098 OK ['shell', 'input', 'swipe', '540', '1344', '540', '576', '300'] 
+1792571678.9157634 RFCX11C2Q5R OK ['shell', 'input', 'tap', '132', '4'] 
+1792571679.0473626 RFCX11C2Q5R OK ['shell', 'input', 'tap', '132', '4'] 
+1792571679.249443 RFCX11C2Q5R OK ['shell', 'input', 'tap', '132', '4'] 
+1792571690.860336 RFCX11C2Q5R OK ['shell', 'input', 'tap', '160', '64'] 
+1792571691.05302 RFCX11C2Q5R OK ['shell', 'input', 'tap', '160', '64'] 
+1792571696.9097927 RFCX11C2Q5R OK ['shell', 'input', 'tap', '232', '35'] 
+1792590834.1056128 44305a324c503098 OK ['shell', 'input', 'tap', '205', '5'] 
+1792590834.790331 44305a324c503098 OK ['shell', 'input', 'tap', '205', '5'] 
+1792590835.30339 44305a324c503098 OK ['shell', 'input', 'tap', '187', '41'] 
+1792590835.777333 44305a324c503098 OK ['shell', 'input', 'tap', '187', '41'] 
