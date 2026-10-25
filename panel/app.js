@@ -1,350 +1,386 @@
 'use strict';
 
-// ================= autenticação =================
-// ATENÇÃO: este segredo vai no JS servido a quem alcançar a porta. Use o
-// painel só em 127.0.0.1 (uvicorn --host 127.0.0.1) ou numa rede de confiança.
 const AUTO_SECRET = "manifesty1-lab";
 let TOKEN = localStorage.getItem('token') || null;
-let loggingIn = false;
+let devices = [];
+let active = null;
+let player = null;
+let map = null;
+let markers = {};
+let logInterval = null;
 
+// ==== AUTH ====
 async function doLogin() {
   const r = await fetch('/api/auth', {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json'},
+    method: 'POST', headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({device: 'panel', secret: AUTO_SECRET})
   });
   if (!r.ok) return false;
   const j = await r.json();
-  TOKEN = j.token;
-  localStorage.setItem('token', TOKEN);
-  return true;
+  TOKEN = j.token; localStorage.setItem('token', TOKEN); return true;
 }
-
 async function ensureAuth() {
   if (TOKEN) {
-    const probe = await fetch('/api/devices',
-      {headers: {'Authorization': `Bearer ${TOKEN}`}});
-    if (probe.status === 401) {
-      TOKEN = null; localStorage.removeItem('token');
-    } else if (probe.ok) {
-      return true;
-    }
+    const probe = await fetch('/api/devices', {headers: {'Authorization': `Bearer ${TOKEN}`}});
+    if (probe.status === 401) { TOKEN = null; localStorage.removeItem('token'); }
+    else if (probe.ok) return true;
   }
-  if (loggingIn) return false;
-  loggingIn = true;
-  try { return await doLogin(); } finally { loggingIn = false; }
+  return await doLogin();
+}
+async function authFetch(url, opts = {}) {
+  const headers = Object.assign({}, opts.headers || {}, TOKEN ? {'Authorization': `Bearer ${TOKEN}`} : {});
+  return fetch(url, Object.assign({}, opts, {headers}));
 }
 
-async function authFetch(url, opts = {}, retry = true) {
-  const headers = Object.assign({}, opts.headers || {},
-    TOKEN ? {'Authorization': `Bearer ${TOKEN}`} : {});
-  const r = await fetch(url, Object.assign({}, opts, {headers}));
-  if (r.status === 401 && retry) {
-    if (await ensureAuth()) return authFetch(url, opts, false);
-  }
-  return r;
-}
+// ==== TEMA (Injeta o estilo escuro dinamicamente) ====
+document.documentElement.setAttribute('data-theme', 'dark');
+const style = document.createElement('style');
+style.textContent = `
+  :root { --bg: #0a0f1a; --surface: #111827; --border: #1f2937; --primary: #00ffff; --text: #e5e7eb; --muted: #9ca3af; --success: #10b981; --danger: #ef4444; }
+  body { background: var(--bg); color: var(--text); margin: 0; font-family: system-ui; }
+  header { display:flex; padding:12px 24px; background:var(--surface); border-bottom:2px solid var(--primary); align-items:center; }
+  #dashboard-view { padding: 24px; display: block; }
+  .section-title { color: var(--primary); border-bottom: 1px solid var(--border); padding-bottom: 8px; margin: 24px 0 16px 0; text-transform: uppercase; display: flex; justify-content: space-between; align-items: center; }
+  .device-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; }
+  .device-card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 16px; cursor: pointer; transition: 0.2s; }
+  .device-card:hover { border-color: var(--primary); box-shadow: 0 0 15px rgba(0,255,255,0.15); }
+  .device-card.online { border-left: 4px solid var(--success); }
+  .device-card.offline { border-left: 4px solid var(--danger); opacity: 0.7; cursor: default; }
+  .device-header { display: flex; justify-content: space-between; margin-bottom: 12px; }
+  .device-status { font-size: 11px; padding: 2px 8px; border-radius: 12px; border: 1px solid; }
+  .device-status.online { color: var(--success); }
+  .device-status.offline { color: var(--danger); }
+  .device-info { font-size: 12px; color: var(--muted); margin-bottom: 8px; }
+  .device-loc { font-size: 11px; color: var(--primary); }
+  
+  /* NOVO LAYOUT DE DETALHE (Mapa 40%) */
+  #detail-view { display: none; height: calc(100vh - 60px); padding: 16px; gap: 16px; grid-template-columns: 300px 1fr 40%; }
+  #detail-view.active { display: grid; }
+  .panel { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; display: flex; flex-direction: column; overflow: hidden; }
+  .panel h3 { font-size: 13px; margin: 0; padding: 12px; border-bottom: 1px solid var(--border); color: var(--primary); text-transform: uppercase; }
+  #install-log { flex: 1; background: #000; color: #0f0; font-family: monospace; font-size: 11px; padding: 8px; overflow-y: auto; white-space: pre-wrap; margin-bottom: 8px; border-radius: 4px; }
+  #video-container { flex: 1; display: flex; align-items: center; justify-content: center; background:#000; position: relative;}
+  #video-container canvas { max-width: 100%; max-height: 100%; object-fit: contain; cursor: crosshair; }
+  #map-container { flex: 1; background: #000; min-height: 200px; }
+  #history-list { height: 150px; overflow-y: auto; font-family: monospace; font-size: 11px; padding: 8px; }
+  .history-item { display: flex; justify-content: space-between; padding: 4px 0; border-bottom: 1px solid var(--border); }
+  
+  /* NOVOS CONTROLES */
+  .controls-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; padding: 12px; }
+  .btn { background: #21262d; color: var(--text); border: 1px solid var(--border); border-radius: 4px; padding: 8px; cursor: pointer; text-align: center; font-size: 12px; }
+  .btn:hover { background: #30363d; border-color: var(--primary); }
+  .btn.primary { background: var(--primary); color: #000; font-weight: bold; }
+  .input-row { display: flex; gap: 8px; padding: 12px; border-top: 1px solid var(--border); }
+  .input-row input { flex: 1; background: #000; color: #fff; border: 1px solid var(--border); padding: 8px; border-radius: 4px; font-family: monospace; }
+  #btn-back { cursor: pointer; background: none; border: 1px solid var(--border); color: var(--primary); padding: 4px 8px; border-radius: 4px; margin: 12px; }
+`;
+document.head.appendChild(style);
 
-// Escapa texto vindo do dispositivo/servidor antes de o pôr em innerHTML.
-function esc(s) {
-  return String(s).replace(/[&<>"']/g, c => (
-    {'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
-}
+// ==== VISTAS (Constrói o HTML dinamicamente) ====
+document.body.innerHTML = `
+<header>
+  <h1 style="font-size:18px; margin:0; color:var(--primary); text-transform:uppercase;">MAD-Lab</h1>
+  <span class="badge" id="conn-badge" style="margin-left:12px; padding:4px 12px; background:var(--border); border-radius:4px; font-size:12px;">a ligar…</span>
+  <span class="badge" id="clock" style="margin-left:12px; padding:4px 12px; background:var(--border); border-radius:4px; font-size:12px;"></span>
+</header>
+<div id="dashboard-view">
+  <div class="section-title">
+    Dispositivos Online 
+    <button id="btn-connect-all" class="btn primary" style="font-size:11px; padding:4px 8px;">Ligar Todos</button>
+  </div>
+  <div class="device-grid" id="online-grid"></div>
+  <div class="section-title">Dispositivos Offline (Registados)</div>
+  <div class="device-grid" id="offline-grid"></div>
+</div>
+<div id="detail-view">
+  <div class="panel" style="display:flex; flex-direction:column;">
+    <h3>Controlo e Info</h3>
+    <button id="btn-back">← Voltar ao Dashboard</button>
+    <div id="device-info-content" style="padding:12px; font-family:monospace; font-size:12px;"></div>
+    
+    <div class="controls-grid">
+      <button class="btn" id="btn-back-key">◀ Voltar</button>
+      <button class="btn" id="btn-home-key">⌂ Início</button>
+      <button class="btn" id="btn-power-key">⏻ Ecrã</button>
+      <button class="btn" id="btn-swipe-up">↑ Swipe</button>
+      <button class="btn" id="btn-swipe-down">↓ Swipe</button>
+    </div>
 
-function wsUrl(path) {
-  return (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + path;
-}
+    <div class="input-row">
+      <input type="password" id="unlock-input" placeholder="PIN / Password para desbloquear">
+      <button class="btn" id="btn-unlock">Enviar</button>
+    </div>
 
-// ================= estado global =================
+    <h3>Log de Instalação</h3>
+    <div id="install-log">A aguardar...</div>
+  </div>
+  <div class="panel">
+    <h3>Ecrã do Dispositivo</h3>
+    <div id="video-container"><span id="video-hint" style="color:var(--muted);">Stream indisponível</span></div>
+  </div>
+  <div class="panel">
+    <h3>Mapa e Histórico</h3>
+    <div id="map-container"></div>
+    <div id="history-list"></div>
+  </div>
+</div>
+`;
+
+// Ícone de pino azul clássico (estilo Google Maps)
+const bluePinIcon = L.divIcon({
+  className: 'custom-pin',
+  html: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="#00ffff" width="32" height="32" style="filter: drop-shadow(0 2px 2px rgba(0,0,0,0.5));">
+          <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/>
+        </svg>`,
+  iconSize: [32, 32],
+  iconAnchor: [16, 32],
+  popupAnchor: [0, -32]
+});
+
+
+
+
 const connBadge = document.getElementById('conn-badge');
 const clockEl = document.getElementById('clock');
-let devices = [];
-let active = null;
+setInterval(() => clockEl.textContent = new Date().toLocaleTimeString(), 1000);
 
 function setConn(ok) {
   connBadge.textContent = ok ? 'ligado' : 'sem ligação';
-  connBadge.className = 'badge ' + (ok ? 'on' : 'off');
-}
-setInterval(() => { clockEl.textContent = new Date().toLocaleTimeString(); }, 1000);
-
-// ================= vídeo =================
-// O player (scrcpy 4.1 + WebCodecs) vem de /static/scrcpy-bundle.js, gerado
-// localmente com `npm run build`. Nada é carregado de CDNs.
-const videoBox = document.getElementById('video-box');
-const videoHint = document.getElementById('video-hint');
-let player = null;
-
-function initPlayer() {
-  if (!window.ScrcpyPanel) {
-    videoHint.textContent =
-      'Erro: /static/scrcpy-bundle.js não carregou. Corra "npm run build" em panel/.';
-    return;
-  }
-  player = new window.ScrcpyPanel.ScreenPlayer(videoBox, {
-    getToken: () => TOKEN,
-    onStatus: (msg) => { videoHint.textContent = msg; },
-    onAuthError: ensureAuth,
-  });
+  connBadge.style.color = ok ? 'var(--success)' : 'var(--danger)';
 }
 
-// Clique no ecrã -> tap, em pixels do VÍDEO (é o que o backend espera).
-videoBox.addEventListener('click', (e) => {
-  if (!active || !player || !player.canvas) return;
-  const c = player.canvas										;
-  const p = window.ScrcpyPanel.mapClick(
-    c.getBoundingClientRect(), c.width, c.height, e.clientX, e.clientY);
-  if (p) sendCommand({action: 'tap', x: p.x, y: p.y});
-});
-
-// ================= dispositivos =================
-const devicesList = document.getElementById('devices-list');
-
-function renderDevices() {
-  devicesList.innerHTML = '';
-  if (!devices.length) {
-    devicesList.innerHTML =
-      '<div class="empty">Nenhum dispositivo detetado.<br>' +
-      'Ligue um dispositivo via adb ou ative o app no alvo.</div>';
-    return;
-  }
-  devices.forEach(d => {
-    const el = document.createElement('div');
-    el.className = 'device' + (d.serial === active ? ' selected' : '');
-    const adbTag = d.managed ? '' : ' <span class="tag">(adb)</span>';
-    el.innerHTML =
-      `<div class="name">${esc(d.serial)}${adbTag}</div>
-       <div class="row"><span class="dot ${d.video ? 'on' : ''}"></span>vídeo</div>
-       <div class="row"><span class="dot ${d.control ? 'on' : ''}"></span>controlo</div>
-       <div class="row"><span class="dot ${d.last_location ? 'on' : ''}"></span>
-         ${d.last_location
-           ? d.last_location.lat.toFixed(4) + ', ' + d.last_location.lon.toFixed(4)
-           : 'sem localização'}</div>` +
-      (d.last_error ? `<div class="err">${esc(d.last_error)}</div>` : '');
-    el.onclick = () => selectDevice(d.serial);
-    devicesList.appendChild(el);
-  });
+// ==== LÓGICA DE VISTAS ====
+function showDashboard() {
+  document.getElementById('detail-view').classList.remove('active');
+  document.getElementById('dashboard-view').style.display = 'block';
+  if (player) player.disconnect();
+  if (logInterval) clearInterval(logInterval);
+  active = null;
 }
-
-// Cria a sessão no servidor (localização + comandos + vídeo) SEM depender
-// do WebSocket de vídeo.
-async function startSession(serial) {
-  try {
-    const r = await authFetch(
-      `/api/device/${encodeURIComponent(serial)}/start`, {method: 'POST'});
-    let j = {};
-    try { j = await r.json(); } catch { /* sem corpo JSON */ }
-    if (!r.ok) {
-      logAction(`start falhou (HTTP ${r.status})` +
-        (j.detail ? ` — ${j.detail}` : ''), 'log-err');
-    } else if (j.last_error) {
-      logAction(`aviso: ${j.last_error}`, 'log-err');
-    }
-  } catch (err) {
-    logAction(`erro no start: ${err.message}`, 'log-err');
-  }
-}
-
-async function selectDevice(serial) {
-  active = serial;
-  renderDevices();
-  logAction(`dispositivo selecionado: ${serial}`);
-  await startSession(serial);
-  if (active === serial && player) player.connect(serial);
-  refreshDevices();
-}
-
-async function refreshDevices() {
-  let r;
-  try {
-    r = await authFetch('/api/devices');
-  } catch {
-    setConn(false);
-    return;
-  }
-  setConn(r.ok);
-  if (!r.ok) return;
-  const j = await r.json();
-  devices = j.devices;
-  if (!active && devices.length) selectDevice(devices[0].serial);
-  else if (active) {
-    const cur = devices.find(d => d.serial === active);
-    if (!cur) {
-      active = null;
-      if (player) player.disconnect();
-      renderDevices();
-      if (devices.length) selectDevice(devices[0].serial);
-    } else renderDevices();
-  }
-}
-
-// Cada refresh corre `adb devices` no servidor: limita a frequência quando
-// chegam muitas atualizações de localização seguidas.
-let lastRefresh = 0;
-function refreshDevicesThrottled() {
-  const now = Date.now();
-  if (now - lastRefresh < 2000) return;
-  lastRefresh = now;
-  refreshDevices();
-}
-
-// ================= mapa: distrito da Manhiça =================
-const MANHICA_DISTRICT = L.latLngBounds(
-  [-25.60, 32.45],
-  [-24.90, 33.15],
-);
-
-const MAX_BOUNDS = L.latLngBounds(
-  [-25.80, 32.30],
-  [-24.75, 33.30],
-);
-
-const map = L.map('map', {
-  zoomControl: true,
-  maxBounds: MAX_BOUNDS,
-  maxBoundsViscosity: 0.9,
-  minZoom: 9,
-  maxZoom: 18,
-});
-
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-  attribution: '© OpenStreetMap',
-  maxZoom: 19,
-}).addTo(map);
-
-function frameInitialView() {
-  map.fitBounds(MANHICA_DISTRICT, { padding: [20, 20] });
-}
-
-function refreshMapSize() {
-  map.invalidateSize();
-  frameInitialView();
-}
-window.addEventListener('load', refreshMapSize);
-setTimeout(refreshMapSize, 300);
-
-// ---------- marcadores em tempo real ----------
-const markers = {};
-let mapCenteredOnDevice = false;
 
 function connectLocations() {
+  if (window.locWs) window.locWs.close(); 
   const locWs = new WebSocket(wsUrl('/ws/location'));
+  window.locWs = locWs;
+  
   locWs.onopen = () => locWs.send(TOKEN);
   locWs.onmessage = (e) => {
     let d;
     try { d = JSON.parse(e.data); } catch { return; }
 
+    if (!active) return; // Só desenha se estivermos no detalhe do dispositivo
+
+    // Cria ou atualiza o marcador do dispositivo atual
     if (!markers[d.device]) {
-      markers[d.device] = L.marker([d.lat, d.lon])
+      markers[d.device] = L.marker([d.lat, d.lon], { icon: bluePinIcon })
         .addTo(map)
-        .bindPopup(esc(d.device));
-      if (!mapCenteredOnDevice) {
-        if (MANHICA_DISTRICT.contains([d.lat, d.lon])) {
-          map.setView([d.lat, d.lon], 14);
-          mapCenteredOnDevice = true;
-        }
-      }
+        .bindPopup(`<b>${esc(d.device)}</b><br>Fonte: ${d.source}`);
+      
+      // Foca e dá zoom no dispositivo (animação)
+      map.flyTo([d.lat, d.lon], 15, { duration: 1.5 });
+    } else {
+      markers[d.device].setLatLng([d.lat, d.lon]);
+      markers[d.device].setPopupContent(`<b>${esc(d.device)}</b><br>Fonte: ${d.source}<br>IP: ${d.ip_publico || 'N/A'}`);
+      // Se o dispositivo se mover, o mapa acompanha
+      map.panTo([d.lat, d.lon]);
     }
-    markers[d.device].setLatLng([d.lat, d.lon]);
-    markers[d.device].setPopupContent(
-      `<b>${esc(d.device)}</b><br>${d.lat.toFixed(5)}, ${d.lon.toFixed(5)}<br>` +
-      `±${esc(d.accuracy)} m — ${new Date(d.ts * 1000).toLocaleTimeString()}`);
+    
     refreshDevicesThrottled();
   };
-  locWs.onclose = async (ev) => {
-    // 4401 = token recusado: renova antes de tentar de novo.
-    if (ev && ev.code === 4401) await ensureAuth().catch(() => false);
-    setTimeout(connectLocations, 2000);
+  locWs.onclose = () => setTimeout(connectLocations, 2000);
+}
+
+
+function showDetail(serial) {
+  document.getElementById('dashboard-view').style.display = 'none';
+  document.getElementById('detail-view').classList.add('active');
+  active = serial;
+  renderDeviceInfo(serial);
+  initMap();
+  loadHistory(serial);
+  if (player) { player.disconnect(); player.connect(serial); }
+  
+  if (logInterval) clearInterval(logInterval);
+  const fetchLog = async () => {
+    if (active !== serial) return;
+    try {
+      const r = await authFetch(`/api/device/${serial}/logs`);
+      if (r.ok) {
+        const j = await r.json();
+        const logEl = document.getElementById('install-log');
+        logEl.textContent = j.install.join('\n') || 'A aguardar...';
+        logEl.scrollTop = logEl.scrollHeight;
+      }
+    } catch {}
   };
+  fetchLog();
+  logInterval = setInterval(fetchLog, 1500);
 }
+document.getElementById('btn-back').onclick = showDashboard;
 
-// ================= ações (botões) =================
-const typeInput = document.getElementById('type-input');
-const actionLog = document.getElementById('action-log');
-let actionCount = 0;
-
-function logAction(msg, cls = '') {
-  const line = document.createElement('div');
-  line.className = cls;
-  line.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
-  actionLog.appendChild(line);
-  while (actionLog.children.length > 30) actionLog.removeChild(actionLog.firstChild);
-  actionLog.scrollTop = actionLog.scrollHeight;
-}
-
-async function sendCommand(body) {
-  if (!active) {
-    logAction('sem dispositivo selecionado', 'log-err');
-    return;
-  }
+// ==== COMANDOS E CONTROLO ====
+async function sendCmd(body) {
+  if (!active) return;
   try {
-    const r = await authFetch(`/api/device/${encodeURIComponent(active)}/cmd`, {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify(body)
+    const r = await authFetch(`/api/device/${active}/cmd`, {
+      method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)
     });
-    let j = null;
-    try { j = await r.json(); } catch { /* resposta sem corpo JSON */ }
-    if (!r.ok) {
-      const detail = j && j.detail
-        ? ` — ${typeof j.detail === 'string' ? j.detail : JSON.stringify(j.detail)}`
-        : '';
-      logAction(`comando falhou (HTTP ${r.status})${detail}`, 'log-err');
-      return;
+    if(!r.ok) console.warn("Comando falhou:", r.status);
+  } catch(e) { console.error(e); }
+}
+
+document.getElementById('btn-home-key').onclick = () => sendCmd({action: 'key', keycode: 3});
+document.getElementById('btn-back-key').onclick = () => sendCmd({action: 'key', keycode: 4});
+document.getElementById('btn-power-key').onclick = () => sendCmd({action: 'key', keycode: 26});
+document.getElementById('btn-swipe-up').onclick = () => sendCmd({action: 'swipe', x1: 540, y1: 1600, x2: 540, y2: 600, ms: 300});
+document.getElementById('btn-swipe-down').onclick = () => sendCmd({action: 'swipe', x1: 540, y1: 600, x2: 540, y2: 1600, ms: 300});
+
+document.getElementById('btn-unlock').onclick = () => {
+  const input = document.getElementById('unlock-input');
+  const pin = input.value.trim();
+  if (pin) {
+    sendCmd({action: 'type', text: pin});
+    // Envia Enter (Keycode 66) para confirmar o PIN
+    setTimeout(() => sendCmd({action: 'key', keycode: 66}), 500);
+    input.value = '';
+  }
+};
+
+// ==== MULTI-DISPOSITIVO ====
+document.getElementById('btn-connect-all').onclick = async () => {
+  const online = devices.filter(d => d.online);
+  for (const d of online) {
+    await authFetch(`/api/device/${d.serial}/start`, {method: 'POST'});
+  }
+  alert(`Iniciadas sessões para ${online.length} dispositivos.`);
+};
+
+// ==== RENDERIZAÇÃO ====
+function renderDevices() {
+  const onlineGrid = document.getElementById('online-grid');
+  const offlineGrid = document.getElementById('offline-grid');
+  onlineGrid.innerHTML = ''; offlineGrid.innerHTML = '';
+
+  const online = devices.filter(d => d.online);
+  const offline = devices.filter(d => !d.online);
+
+  if (!online.length) onlineGrid.innerHTML = '<div style="color:var(--muted); font-size:13px;">Nenhum dispositivo ligado.</div>';
+  if (!offline.length) offlineGrid.innerHTML = '<div style="color:var(--muted); font-size:13px;">Sem registos.</div>';
+
+  const createCard = (d) => {
+    const el = document.createElement('div');
+    el.className = `device-card ${d.online ? 'online' : 'offline'}`;
+    el.innerHTML = `
+      <div class="device-header">
+        <div style="font-weight:bold;">${d.model || d.serial}</div>
+        <div class="device-status ${d.online ? 'online' : 'offline'}">${d.online ? 'ONLINE' : 'OFFLINE'}</div>
+      </div>
+      <div class="device-info">${d.brand || '?'} | Android ${d.android_version || '?'}</div>
+      <div class="device-loc">${d.last_location ? `Fonte: ${d.last_location.source || 'gps'} | Lat: ${d.last_location.lat.toFixed(4)} Lon: ${d.last_location.lon.toFixed(4)}` : 'Sem localização'}</div>
+    `;
+    if (d.online) el.onclick = () => showDetail(d.serial);
+    return el;
+  };
+  online.forEach(d => onlineGrid.appendChild(createCard(d)));
+  offline.forEach(d => offlineGrid.appendChild(createCard(d)));
+}
+
+function renderDeviceInfo(serial) {
+  const d = devices.find(x => x.serial === serial);
+  if (!d) return;
+  document.getElementById('device-info-content').innerHTML = `
+    <div style="margin-bottom:4px;">Serial: ${d.serial}</div>
+    <div style="margin-bottom:4px;">Marca: ${d.brand || '?'}</div>
+    <div style="margin-bottom:4px;">Modelo: ${d.model || '?'}</div>
+    <div style="margin-bottom:4px;">Android: ${d.android_version || '?'}</div>
+    <div>Localização: ${d.last_location ? d.last_location.source : 'N/A'}</div>
+  `;
+}
+
+// ==== MAPA E HISTÓRICO ====
+function initMap() {
+  if (map) return;
+  // Mapa expandido, foco em Maputo e arredores (Manhiça)
+  const maputoBounds = [[-26.2, 32.0], [-24.8, 33.2]];
+  map = L.map('map-container', { maxBounds: maputoBounds, minZoom: 9 }).setView([-25.9655, 32.5832], 10);
+  
+  // MUDANÇA: Usar OpenStreetMap padrão em vez do CARTO (que exigia chave)
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '&copy; OpenStreetMap', maxZoom: 19
+  }).addTo(map);
+}
+
+async function loadHistory(serial) {
+  try {
+    const r = await authFetch(`/api/device/${serial}/history`);
+    if (!r.ok) return;
+    const j = await r.json();
+    const histEl = document.getElementById('history-list');
+    histEl.innerHTML = '';
+    
+    // Limpa polylines antigas
+    if (markers[serial + '_poly']) map.removeLayer(markers[serial + '_poly']);
+    const pts = [];
+    
+    j.history.forEach(h => {
+      pts.push([h.lat, h.lon]);
+      const el = document.createElement('div');
+      el.className = 'history-item';
+      el.style.color = h.source === 'ip' ? 'var(--warn)' : 'var(--success)'; 
+      el.innerHTML = `<span>${h.source.toUpperCase()}</span><span>${h.distance ? '+' + h.distance.toFixed(0) + 'm' : '-'}</span>`;
+      histEl.appendChild(el);
+    });
+
+    if (pts.length > 0) {
+      // Desenha a linha do histórico em ciano
+      markers[serial + '_poly'] = L.polyline(pts, {color: '#00ffff', weight: 2, opacity: 0.5}).addTo(map);
+      
+      // Se quiseres adicionar pinos pequenos para o histórico:
+      pts.forEach(p => {
+         L.circleMarker(p, {radius: 4, color: '#00ffff', fillColor: '#00ffff', fillOpacity: 0.5}).addTo(map);
+      });
     }
-    actionCount++;
-    logAction(`comando #${actionCount} via ${(j && j.channel) || '?'}`);
-  } catch (err) {
-    logAction(`erro: ${err.message}`, 'log-err');
-  }
+  } catch (e) { console.error(e); }
 }
 
-function bindBtn(id, body) {
-  document.getElementById(id).onclick = () => sendCommand(body);
+
+
+
+
+// ==== PLAYER ====
+function initPlayer() {
+  if (!window.ScrcpyPanel) return;
+  player = new window.ScrcpyPanel.ScreenPlayer(document.getElementById('video-container'), {
+    getToken: () => TOKEN,
+    onStatus: (msg) => document.getElementById('video-hint').textContent = msg,
+  });
+  
+  document.getElementById('video-container').addEventListener('click', (e) => {	
+    if (!active || !player || !player.canvas) return;
+    const c = player.canvas;
+    const p = window.ScrcpyPanel.mapClick(c.getBoundingClientRect(), c.width, c.height, e.clientX, e.clientY);
+    if (p) sendCmd({action: 'tap', x: p.x, y: p.y});
+  });
 }
-bindBtn('btn-back',    {action: 'key', keycode: 4});
-bindBtn('btn-home',    {action: 'key', keycode: 3});
-bindBtn('btn-volup',   {action: 'key', keycode: 24});
-bindBtn('btn-voldown', {action: 'key', keycode: 25});
-bindBtn('btn-power',   {action: 'key', keycode: 26});
 
-// Swipe relativo ao tamanho REAL do vídeo (antes: 540/1600/600 fixos, que só
-// serviam para um ecrã 1080x2xxx).
-function swipe(direction) {
-  const c = player && player.canvas;
-  const w = (c && c.width) || 1080;
-  const h = (c && c.height) || 1920;
-  const x = Math.round(w / 2);
-  const lo = Math.round(h * 0.3);
-  const hi = Math.round(h * 0.7);
-  sendCommand(direction === 'up'
-    ? {action: 'swipe', x1: x, y1: hi, x2: x, y2: lo, ms: 300}
-    : {action: 'swipe', x1: x, y1: lo, x2: x, y2: hi, ms: 300});
+// ==== ARRANQUE ====
+async function refreshDevices() {
+  try {
+    const r = await authFetch('/api/devices');
+    setConn(r.ok);
+    if (!r.ok) return;
+    const j = await r.json();
+    devices = j.devices;
+    renderDevices();
+    if (active) renderDeviceInfo(active);
+  } catch { setConn(false); }
 }
-document.getElementById('btn-swipe-up').onclick = () => swipe('up');
-document.getElementById('btn-swipe-down').onclick = () => swipe('down');
 
-function sendType() {
-  const t = typeInput.value.trim();
-  if (!t) return;
-  sendCommand({action: 'type', text: t});
-  typeInput.value = '';
-}
-document.getElementById('btn-type').onclick = sendType;
-typeInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') sendType(); });
-
-// ================= arranque =================
-initPlayer();
-
-(async () => {
-  if (!await ensureAuth()) {
-    setConn(false);
-    return;
-  }
-  startPolling();
-  connectLocations();
-})();
-
-function startPolling() {
+async function init() {
+  if (!await ensureAuth()) return;
+  initPlayer();
   refreshDevices();
   setInterval(refreshDevices, 5000);
 }
+
+init();

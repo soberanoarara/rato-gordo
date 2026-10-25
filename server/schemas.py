@@ -7,7 +7,8 @@ class LocationReport(BaseModel):
     lon: float = Field(ge=-180, le=180)
     accuracy: float = Field(ge=0, le=100000)
     ts: float | None = None  # sobrescrito pelo servidor
-
+    source: str = "gps"
+    ip_publico: str | None = None
 
 class TokenRequest(BaseModel):
     device: str = Field(min_length=1, max_length=64, pattern=r"^[A-Za-z0-9_\-]+$")

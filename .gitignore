@@ -1,21 +1,35 @@
-# Segurança
-.env
-*.env
-!/.env.example
-
-# Android
-android-app/app/build/
-android-app/.gradle/
-android-app/local.properties
-*.apk
-*.keystore
-
 # Python
-server/venv/
 __pycache__/
 *.pyc
-audit.log
+.pytest_cache/
 
-# Node
-panel/node_modules/
-panel/static/scrcpy-bundle.js
+# Virtualenv
+venv/
+server/venv/
+
+# Environment
+.env
+
+# Android
+.gradle/
+**/.gradle/
+
+build/
+**/build/
+
+local.properties
+
+# APK
+*.apk
+*.apks
+
+# Database
+*.db
+
+# Logs
+*.log
+
+# IDE
+.idea/
+.vscode/
+*.iml

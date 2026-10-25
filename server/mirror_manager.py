@@ -35,11 +35,11 @@ import os
 import re
 import struct
 from dataclasses import dataclass, field
-
+from database import register_device, add_location
 from location_poller import LocationPoller
 from control_channel import CommandChannel
 from scrcpy_control import ScrcpyControlChannel, ScrcpyControlError, ScreenSize
-from config import settings
+
 
 SCRCPY_VERSION = os.environ.get("SCRCPY_VERSION", "4.1")
 SCRCPY_TCP_HOST = os.environ.get("SCRCPY_TCP_HOST", "127.0.0.1")
@@ -81,13 +81,13 @@ def server_args() -> list[str]:
         #  f"max_size={SCRCPY_MAX_SIZE}",
         "max_size=1024",
     ]"""
-    
 
     return [
         f"CLASSPATH={REMOTE_JAR}",
-        "app_process", "/",
+        "app_process",
+        "/",
         "com.genymobile.scrcpy.Server",
-        SCRCPY_VERSION,           # 4.1
+        SCRCPY_VERSION,  # 4.1
         "tunnel_forward=true",
         "audio=false",
         "send_device_meta=false",
@@ -100,6 +100,7 @@ def server_args() -> list[str]:
     if SCRCPY_BIT_RATE:
         args.append(f"video_bit_rate={SCRCPY_BIT_RATE}")
     return args
+
 
 args = server_args()
 remote_command = " ".join(args)
@@ -145,51 +146,6 @@ APK_PATH = os.environ.get(
 APK_PATH = "/home/kali/Documents/lab-demo/android-app/app/build/outputs/apk/debug/app-debug.apk"
 
 
-async def _auto_install_apk(serial: str) -> None:
-    """Instala o APK do lab automaticamente se ainda não estiver instalado."""
-    if not os.path.isfile(APK_PATH):
-        print(f"[Auto-Install] APK não encontrado em: {APK_PATH}")
-        return
-
-    # Verificar se o pacote já está instalado para evitar reinstalações desnecessárias
-    pkg_name = "com.lab.demo"#
-    check_cmd = await asyncio.create_subprocess_exec(
-        "adb",
-        "-s",
-        serial,
-        "shell",
-        "pm",
-        "list",
-        "packages",
-        pkg_name,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.DEVNULL,
-    
-    )
-    out, _ = await check_cmd.communicate()
-    if pkg_name.encode() in out:
-        print(f"[Auto-Install] {pkg_name} já está instalado em {serial}.")
-        return
-
-    print(f"[Auto-Install] A instalar {pkg_name} em {serial}...")
-    install_cmd = await asyncio.create_subprocess_exec(
-        "adb",
-        "-s",
-        serial,
-        "install",
-        "-r",
-        APK_PATH,  # -r = reinstalar mantendo dados
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-    )
-    stdout, stderr = await install_cmd.communicate()
-
-    if install_cmd.returncode == 0:
-        print(f"[Auto-Install] Sucesso em {serial}: {stdout.decode().strip()}")
-    else:
-        print(f"[Auto-Install] Falha em {serial}: {stderr.decode().strip()}")
-
-
 @dataclass
 class MirrorSession:
     serial: str
@@ -225,6 +181,11 @@ class MirrorSession:
     video_ready: bool = False
     control_ready: bool = False
     last_error: str = ""
+    install_log: collections.deque = field(
+        default_factory=lambda: collections.deque(maxlen=50)
+    )
+    _last_fix_time: float = 0.0
+    _ip_task: asyncio.Task | None = None
 
     # ---------- propriedades ----------
 
@@ -274,38 +235,52 @@ class MirrorSession:
         chosen = next((f for f in found if f[0] == "Override"), found[0])
         return int(chosen[1]), int(chosen[2])
 
+    # =========================================================================
+    async def _register_device_info(self):
+        try:
+            _, brand, _ = await self._adb("shell", "getprop", "ro.product.manufacturer", timeout=10)
+            _, model, _ = await self._adb("shell", "getprop", "ro.product.model", timeout=10)
+            _, android, _ = await self._adb("shell", "getprop", "ro.build.version.release", timeout=10)
+            print(f"DEBUG ADB -> Brand: '{brand.strip()}', Model: '{model.strip()}', Android: '{android.strip()}'")
+            
+            if brand.strip():
+                register_device(self.serial, brand.strip(), model.strip(), android.strip())
+            else:
+                print("DEBUG: ADB devolveu marca vazia. A tentar ro.product.brand...")
+                _, brand, _ = await self._adb("shell", "getprop", "ro.product.brand", timeout=10)
+                register_device(self.serial, brand.strip(), model.strip(), android.strip())
+        except Exception as e:
+            print(f"Erro ao registar info no ADB: {e}")
+   
+   
+   
     # ---------- ciclo de vida ----------
 
     async def start(self) -> None:
-        """Idempotente. Nunca levanta por falha de vídeo: regista em
-        `last_error` e deixa `video_active` a False."""
         async with self._lock:
-            # 1) Poller de localização — independente do scrcpy.
             if self.poller is None:
                 try:
                     self.poller = LocationPoller(self.serial, on_fix=self._on_fix)
                     await self.poller.start()
-                except Exception as e:  # não derruba o resto
+                except Exception as e:
                     self.last_error = f"poller: {e}"[:200]
                     self.poller = None
 
-            # 2) Canal de controlo ADB (fallback) — independente do scrcpy.
             if self.control is None:
                 self.control = CommandChannel(self.serial)
                 self.control.start()
                 self.control_ready = True
                 self.control.set_device_size(await self._query_device_size())
-                if self.video_size:
-                    self.control.set_video_size(*self.video_size)
 
-            # 3) scrcpy (só se o pump não estiver vivo).
+            # Regista o dispositivo e instala o APK (com logs para o frontend)
+            await self._register_device_info()
+            await self._do_auto_install()
+
             if not self.video_active:
                 try:
                     await self._launch_scrcpy()
                 except RuntimeError as e:
                     self.last_error = str(e)[:200]
-
-            await _auto_install_apk(self.serial)
 
     async def _launch_scrcpy(self) -> None:
         jar = scrcpy_jar_path()
@@ -377,8 +352,45 @@ class MirrorSession:
 
     async def _on_fix(self, serial: str, lat: float, lon: float, acc: float) -> None:
         if self.location_sink:
-            await self.location_sink(serial, lat, lon, acc)
+            await self.location_sink(serial, lat, lon, acc, source="gps")
 
+    # ==========================================================================
+    async def _do_auto_install(self):
+        self.install_log.append("A verificar instalação...")
+        if not os.path.isfile(APK_PATH):
+            self.install_log.append(f"APK não encontrado: {APK_PATH}")
+            return
+        pkg_name = "com.lab.demo"
+        try:
+            _, out, _ = await self._adb(
+                "shell", "pm", "list", "packages", pkg_name, timeout=5
+            )
+            if pkg_name in out:
+                self.install_log.append(f"{pkg_name} já instalado.")
+                return
+
+            self.install_log.append(f"A instalar {pkg_name}...")
+            install_cmd = await asyncio.create_subprocess_exec(
+                "adb",
+                "-s",
+                self.serial,
+                "install",
+                "-r",
+                APK_PATH,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            stdout, stderr = await install_cmd.communicate()
+            out_str = stdout.decode(errors="ignore").strip()
+            err_str = stderr.decode(errors="ignore").strip()
+            if install_cmd.returncode == 0:
+                self.install_log.append(f"Sucesso: {out_str}")
+            else:
+                self.install_log.append(f"Falha: {err_str}")
+        except Exception as e:
+            self.install_log.append(f"Erro: {e}")
+
+   
     # ---------- ligação ao servidor ----------
 
     async def _connect_video(self):

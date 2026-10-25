@@ -14,6 +14,12 @@ from location_manager import store
 from mirror_manager import registry
 from control_channel import CommandError, ALLOWED_KEYS
 from scrcpy_control import ScrcpyControlError
+from database import init_db, get_registered_devices, get_history
+from ip_locator import get_location_by_ip
+from pydantic import BaseModel
+from database import add_location # 
+
+
 
 BASE_DIR = Path(__file__).resolve().parent
 PANEL_DIR = BASE_DIR.parent / "panel"
@@ -24,6 +30,7 @@ SERIAL_RE = re.compile(r"^[A-Za-z0-9._:\-]{1,64}$")
 
 @asynccontextmanager
 async def lifespan(app):
+    init_db()
     async def _purge():
         while True:
             purge_expired()
@@ -42,13 +49,26 @@ def require_auth(authorization: str = Header(default="")) -> str:
     if not validate(token):
         raise HTTPException(401, "token inválido ou expirado")
     return token
-
-
-async def location_sink(serial: str, lat: float, lon: float, acc: float) -> None:
+    
+async def location_sink(serial: str, lat: float, lon: float, acc: float, source: str = "gps") -> None:
+    # Tenta obter o último IP conhecido deste dispositivo (se foi enviado por IP)
+    db_dev = get_registered_devices()
+    ip_publico = None
+    for d in db_dev:
+        if d.serial == serial:
+            # Se a fonte for IP, ou se já tivermos o IP guardado
+            # (Neste caso, a fonte IP já envia o IP via store)
+            pass 
+            
     data = store.upsert({"device": serial, "lat": lat, "lon": lon,
-                         "accuracy": acc})
+                         "accuracy": acc, "source": source})
     await store.broadcast(data)
-
+    
+    try:
+        from database import add_location
+        add_location(serial, lat, lon, source=source)
+    except Exception as e:
+        print(f"Erro ao guardar no SQLite: {e}")
 
 async def _enumerate_adb_devices() -> list[str]:
     try:
@@ -101,48 +121,49 @@ async def auth(req: TokenRequest):
 # ---------- telemetria de localização ----------
 @app.post("/api/location")
 async def post_location(loc: LocationReport, _: str = Depends(require_auth)):
-    data = store.upsert(loc.model_dump())
+    data = store.upsert(loc.model_dump()) # O model_dump já inclui o ip_publico
     await store.broadcast(data)
+    add_location(loc.device, loc.lat, loc.lon, source=loc.source)
     return {"ok": True}
 
 
 @app.get("/api/devices")
 async def devices(_: str = Depends(require_auth)):
     adb_serials = await _enumerate_adb_devices()
+    registered = {d.serial: d for d in get_registered_devices()}
     out: dict[str, dict] = {}
 
-    for serial, s in registry.sessions.items():
-        scrcpy_ok = bool(s.scrcpy_control and s.scrcpy_control.ready)
-        adb_ok = bool(s.control and s.control.ready)
-        out[serial] = {
-            "serial": serial,
-            "managed": True,
-            "video": s.video_ready,
-            "control": scrcpy_ok or adb_ok,
-            "scrcpy_control": scrcpy_ok,
-            "channels": {"adb": adb_ok, "scrcpy": scrcpy_ok},
-            "location_poller": s.poller.status() if s.poller else None,
-            "last_location": store.last.get(serial),
-            "last_error": s.last_error or None,
-        }
-
     for serial in adb_serials:
-        if serial in out:
-            continue
+        s = registry.get(serial)
+        db_dev = registered.get(serial)
         out[serial] = {
             "serial": serial,
-            "managed": False,
-            "video": False,
-            "control": False,
-            "scrcpy_control": False,
-            "channels": {"adb": False, "scrcpy": False},
-            "location_poller": None,
+            "managed": s is not None,
+            "online": True,
+            "brand": db_dev.brand if db_dev else None,
+            "model": db_dev.model if db_dev else None,
+            "android_version": db_dev.android_version if db_dev else None,
+            "video": s.video_ready if s else False,
+            "control": bool(s and s.control and s.control.ready),
             "last_location": store.last.get(serial),
-            "last_error": None,
+            "last_error": s.last_error if s else None,
         }
 
+    for serial, db_dev in registered.items():
+        if serial not in out:
+            out[serial] = {
+                "serial": serial,
+                "managed": False,
+                "online": False,
+                "brand": db_dev.brand,
+                "model": db_dev.model,
+                "android_version": db_dev.android_version,
+                "video": False,
+                "control": False,
+                "last_location": {"lat": db_dev.last_lat, "lon": db_dev.last_lon, "source": db_dev.last_source, "ts": db_dev.last_seen.timestamp()} if db_dev.last_lat else None,
+                "last_error": None,
+            }
     return {"devices": list(out.values())}
-
 
 @app.get("/api/keys")
 async def allowed_keys(_: str = Depends(require_auth)):
@@ -300,6 +321,34 @@ async def stream_ws(ws: WebSocket, serial: str, token: str = ""):
         for t in (send_t, watch_t):
             t.cancel()
         session.unsubscribe(sub)
+@app.get("/api/device/{serial}/logs")
+async def device_logs(serial: str, _: str = Depends(require_auth)):
+    s = registry.get(serial)
+    if not s: return {"install": [], "server": []}
+    return {"install": list(s.install_log), "server": list(s.server_log)}
+
+@app.get("/api/device/{serial}/history")
+async def device_history(serial: str, _: str = Depends(require_auth)):
+    hist = get_history(serial)
+    return {"history": [{"lat": h.lat, "lon": h.lon, "source": h.source, "ts": h.timestamp.timestamp(), "distance": h.distance_from_prev} for h in hist]}
+
+
+class IpReport(BaseModel):
+    device: str
+    ip: str
+
+@app.post("/api/location/ip")
+async def post_location_ip(report: IpReport, _: str = Depends(require_auth)):
+    """Recebe o IP público do Android e consulta a API do IP2Location."""
+    loc = await get_location_by_ip(report.ip)
+    if not loc:
+        raise HTTPException(400, "Não foi possível geolocalizar o IP")
+    
+    lat, lon, city = loc
+    # Envia para o store e para o SQLite com a source="ip"
+    await location_sink(report.device, lat, lon, 5000.0, source="ip")
+    
+    return {"ok": True, "city": city}
 
 
 app.mount("/", StaticFiles(directory=PANEL_DIR, html=True), name="panel")

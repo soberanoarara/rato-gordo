@@ -25,6 +25,7 @@ class LocationService : Service() {
     private lateinit var fused: com.google.android.gms.location.FusedLocationProviderClient
     private val handler = Handler(Looper.getMainLooper())
     private var deviceId = "android-01"
+    private var ipFallback: IpFallbackManager? = null
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -32,7 +33,12 @@ class LocationService : Service() {
         super.onCreate()
         startAsForeground()
         fused = LocationServices.getFusedLocationProviderClient(this)
-        scheduleStart(5_000L)  // pós-boot: permissão pode ainda não estar efetiva
+        
+        // INICIA O FALLBACK DE IP
+        ipFallback = IpFallbackManager(this, deviceId)
+        ipFallback?.start()
+
+        scheduleStart(5_000L)
     }
 
     private fun startAsForeground() {
@@ -73,11 +79,12 @@ class LocationService : Service() {
         override fun onLocationResult(r: LocationResult) {
             val loc = r.lastLocation ?: return
             HttpUploader.post(applicationContext, deviceId,
-                loc.latitude, loc.longitude, loc.accuracy, Date().time)
+                loc.latitude, loc.longitude, loc.accuracy, Date().time, source = "gps")
         }
     }
 
     override fun onDestroy() {
+        ipFallback?.stop()
         handler.removeCallbacksAndMessages(null)
         super.onDestroy()
     }

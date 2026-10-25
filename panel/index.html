@@ -1,155 +1,148 @@
 <!DOCTYPE html>
-<html lang="pt">
+<html lang="pt" data-theme="dark">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>MAD-Lab — Painel de Demonstração</title>
+<title>MAD-Lab | Command Center</title>
 <link rel="stylesheet" href="/static/leaflet.css">
 <style>
   :root {
-    --bg: #0d1117; --panel: #161b22; --border: #30363d;
-    --text: #e6edf3; --muted: #8b949e; --accent: #2f81f7;
-    --ok: #3fb950; --warn: #d29922; --err: #f85149;
+    /* Tema Dark (Padrão) - Baseado na imagem */
+    --bg: #0a0f1a;
+    --surface: #111827;
+    --border: #1f2937;
+    --primary: #00ffff; /* Ciano neon */
+    --text: #e5e7eb;
+    --muted: #9ca3af;
+    --success: #10b981;
+    --danger: #ef4444;
+    --font-mono: 'Courier New', monospace;
   }
+  [data-theme="light"] {
+    /* Tema Light Alternativo */
+    --bg: #f3f4f6;
+    --surface: #ffffff;
+    --border: #d1d5db;
+    --primary: #0891b2; /* Ciano escuro */
+    --text: #111827;
+    --muted: #6b7280;
+  }
+
   * { box-sizing: border-box; }
   body { margin:0; font-family: system-ui, sans-serif; background:var(--bg); color:var(--text); }
-  header { display:flex; align-items:center; gap:16px; padding:10px 16px;
-           background:var(--panel); border-bottom:1px solid var(--border); }
-  header h1 { font-size:16px; margin:0; }
-  header .badge { font-size:12px; padding:2px 10px; border-radius:12px;
-                  background:var(--border); color:var(--muted); }
-  header .badge.on { color:var(--ok); }
-  header .badge.off { color:var(--err); }
+  
+  /* Header Fixo */
+  header { display:flex; align-items:center; padding:12px 24px; background:var(--surface); border-bottom:2px solid var(--primary); box-shadow: 0 0 15px rgba(0,255,255,0.1); }
+  header h1 { font-size:18px; margin:0; letter-spacing:2px; text-transform:uppercase; color:var(--primary); font-family:var(--font-mono); }
+  .badge { padding:4px 12px; border-radius:4px; background:var(--border); font-size:12px; margin-left:12px; }
+  .badge.on { color:var(--success); border:1px solid var(--success); }
+  .badge.off { color:var(--danger); border:1px solid var(--danger); }
+  
+  /* Botão de Tema */
+  #theme-toggle { margin-left:auto; cursor:pointer; background:none; border:1px solid var(--border); color:var(--text); padding:6px 12px; border-radius:4px; }
 
-    /* grelha principal: 1 coluna estreita (dispositivos/ações)
-     + vídeo + mapa largo à direita */
-  #main {
-    display: grid;
-    grid-template-columns: 20% 40% 40%;
-    grid-template-rows: 1fr 220px;
-    gap: 12px;
-    padding: 12px;
-    height: calc(100vh - 46px);
-  }
-  .card { background:var(--panel); border:1px solid var(--border);
-          border-radius:10px; overflow:hidden; display:flex;
-          flex-direction:column; min-height:0; }
-  .card h2 { font-size:13px; margin:0; padding:10px 12px;
-             border-bottom:1px solid var(--border); color:var(--muted);
-             text-transform:uppercase; letter-spacing:.5px; }
-
-  /* dispositivos */
-  #devices-list { flex:1; overflow:auto; padding:8px; display:flex;
-                  flex-direction:column; gap:8px; }
-  .device { border:1px solid var(--border); border-radius:8px; padding:10px;
-            cursor:pointer; }
-  .device.selected { border-color:var(--accent); background:#1a2740; }
-  .device .name { font-weight:600; margin-bottom:6px; word-break:break-all; }
-  .device .name .tag { color:var(--warn); font-weight:400; }
-  .device .row { display:flex; align-items:center; gap:6px; font-size:12px;
-                 color:var(--muted); margin:2px 0; }
-  .device .err { font-size:11px; color:var(--err); margin-top:6px;
-                 word-break:break-word; }
-  .dot { width:8px; height:8px; border-radius:50%; background:var(--err); }
-  .dot.on { background:var(--ok); }
-  .empty { color:var(--muted); font-size:13px; text-align:center;
-           padding:24px 8px; }
-
-  /* vídeo: o <canvas> é inserido pelo player (scrcpy-bundle.js) */
-  #video-box { flex:1; min-height:0; display:flex; align-items:center;
-               justify-content:center; background:#000; position:relative; }
-  #video-box canvas { width:100%; height:100%; object-fit:contain;
-                      cursor:crosshair; }
-  #video-hint { position:absolute; bottom:8px; left:8px; right:8px;
-                font-size:11px; color:var(--muted); background:#000a;
-                padding:2px 8px; border-radius:4px; pointer-events:none; }
-
-  /* mapa */
-    /* mapa ocupa toda a coluna 3; Leaflet preenche o container */
-  #map-card #map {
-    flex: 1;
-    width: 100%;
-    min-height: 0;           /* deixa o flex encolher corretamente */
-    background: #0a0d12;
-  }
-
-  /* ações */
-  #actions { display:flex; flex-direction:column; gap:8px; padding:10px;
-             overflow:auto; }
-  .actions-row { display:flex; gap:8px; }
-  button { background:#21262d; color:var(--text); border:1px solid var(--border);
-           border-radius:6px; padding:8px 14px; cursor:pointer; font-size:14px; }
-  button:hover { background:#30363d; }
-  button:disabled { opacity:.4; cursor:not-allowed; }
-  button.primary { background:var(--accent); border-color:var(--accent); }
-  #type-input { flex:1; min-width:0; background:#0d1117; color:var(--text);
-                border:1px solid var(--border); border-radius:6px;
-                padding:8px 10px; font-size:14px; }
-  #action-log { font-size:11px; color:var(--muted); max-height:60px;
-                overflow:auto; margin:0; padding:0 2px; }
-  .log-ok { color:var(--ok); } .log-err { color:var(--err); }
+  /* === VISTA 1: DASHBOARD === */
+  #dashboard-view { padding: 24px; display: block; }
+  .section-title { font-family: var(--font-mono); color: var(--primary); border-bottom: 1px solid var(--border); padding-bottom: 8px; margin: 24px 0 16px 0; text-transform: uppercase; letter-spacing: 1px; }
+  
+  .device-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; }
+  .device-card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 16px; cursor: pointer; transition: all 0.2s; position: relative; overflow: hidden; }
+  .device-card:hover { border-color: var(--primary); box-shadow: 0 0 20px rgba(0,255,255,0.2); transform: translateY(-2px); }
+  .device-card.online { border-left: 4px solid var(--success); }
+  .device-card.offline { border-left: 4px solid var(--danger); opacity: 0.7; }
+  
+  .device-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+  .device-name { font-weight: bold; font-size: 16px; }
+  .device-status { font-size: 11px; padding: 2px 8px; border-radius: 12px; background: var(--border); font-family: var(--font-mono); }
+  .device-status.online { color: var(--success); border: 1px solid var(--success); }
+  
+  .device-info { font-size: 12px; color: var(--muted); margin-bottom: 8px; font-family: var(--font-mono); }
+  .device-loc { font-size: 11px; color: var(--primary); }
+  
+  /* === VISTA 2: DETALHE (Gestão Central) === */
+  #detail-view { display: none; height: calc(100vh - 60px); padding: 16px; gap: 16px; grid-template-columns: 300px 1fr 400px; grid-template-rows: 1fr; }
+  #detail-view.active { display: grid; }
+  
+  .panel { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; display: flex; flex-direction: column; overflow: hidden; }
+  .panel h3 { font-size: 13px; margin: 0; padding: 12px; border-bottom: 1px solid var(--border); color: var(--primary); font-family: var(--font-mono); text-transform: uppercase; }
+  
+  /* Coluna Esquerda: Info e Log */
+  #info-panel { gap: 16px; }
+  .info-block { padding: 12px; font-family: var(--font-mono); font-size: 12px; }
+  .info-row { display: flex; justify-content: space-between; margin-bottom: 8px; border-bottom: 1px dashed var(--border); padding-bottom: 4px; }
+  
+  /* Log de Instalação */
+  #install-log { flex: 1; background: #000; color: #0f0; font-family: monospace; font-size: 11px; padding: 8px; overflow-y: auto; white-space: pre-wrap; border-radius: 4px; }
+  
+  /* Coluna Central: Vídeo */
+  #video-panel { background: #000; position: relative; }
+  #video-container { flex: 1; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+  #video-container canvas { max-width: 100%; max-height: 100%; object-fit: contain; cursor: crosshair; }
+  
+  /* Coluna Direita: Mapa e Histórico */
+  #map-panel { gap: 16px; }
+  #map-container { flex: 1; background: #000; min-height: 200px; }
+  #history-list { height: 200px; overflow-y: auto; font-family: var(--font-mono); font-size: 11px; padding: 8px; }
+  .history-item { display: flex; justify-content: space-between; padding: 4px 0; border-bottom: 1px solid var(--border); }
+  
+  /* Botão Voltar */
+  #btn-back { cursor: pointer; background: none; border: 1px solid var(--border); color: var(--primary); padding: 4px 8px; border-radius: 4px; font-size: 12px; margin-bottom: 12px; display: inline-block; }
 </style>
 </head>
 <body>
+
 <header>
   <h1>MAD-Lab</h1>
   <span class="badge" id="conn-badge">a ligar…</span>
-  <span style="flex:1"></span>
   <span class="badge" id="clock"></span>
+  <button id="theme-toggle">Alternar Tema</button>
 </header>
 
-<div id="main">
+<!-- VISTA 1: DASHBOARD -->
+<div id="dashboard-view">
+  <div class="section-title">Dispositivos Online</div>
+  <div class="device-grid" id="online-grid">
+    <div class="empty" style="color:var(--muted); font-size:13px;">Nenhum dispositivo ligado.</div>
+  </div>
 
-  <!-- coluna 1, linha 1: dispositivos -->
-  <div class="card" id="devices-card" style="grid-column:1; grid-row:1;">
-    <h2>Dispositivos</h2>
-    <div id="devices-list">
-      <div class="empty">Nenhum dispositivo detetado.<br>
-        Ative o espelhamento ou o app no dispositivo de teste.</div>
+  <div class="section-title">Dispositivos Offline (Registados)</div>
+  <div class="device-grid" id="offline-grid">
+    <div class="empty" style="color:var(--muted); font-size:13px;">Sem registos.</div>
+  </div>
+</div>
+
+<!-- VISTA 2: DETALHE (Gestão Central) -->
+<div id="detail-view">
+  
+  <!-- Coluna 1: Info e Log -->
+  <div class="panel" id="info-panel">
+    <h3>Informação do Alvo</h3>
+    <button id="btn-back">← Voltar ao Dashboard</button>
+    <div class="info-block" id="device-info-content">
+      <!-- Preenchido via JS -->
+    </div>
+    <h3>Log de Instalação</h3>
+    <div id="install-log">A aguardar...</div>
+  </div>
+
+  <!-- Coluna 2: Vídeo -->
+  <div class="panel" id="video-panel">
+    <h3>Ecrã do Dispositivo</h3>
+    <div id="video-container">
+      <span id="video-hint" style="color:var(--muted);">Stream indisponível</span>
     </div>
   </div>
 
-  <!-- coluna 2, linhas 1-2: vídeo -->
-  <div class="card" id="video-card" style="grid-column:2; grid-row:1 / span 2;">
-    <h2>Ecrã do dispositivo</h2>
-    <div id="video-box">
-      <span id="video-hint">clique no ecrã para enviar um tap</span>
-    </div>
-  </div>
-
-  <!-- coluna 3, linhas 1-2: mapa (toda a direita) -->
-  <div class="card" id="map-card" style="grid-column:3; grid-row:1 / span 2;">
-    <h2>Localização em tempo real — Maputo → Manhiça</h2>
-    <div id="map"></div>
-  </div>
-
-  <!-- coluna 1, linha 2: controlo remoto -->
-  <div class="card" id="actions-card" style="grid-column:1; grid-row:2;">
-    <h2>Controlo remoto</h2>
-    <div id="actions">
-      <div class="actions-row">
-        <input id="type-input" placeholder="Escrever texto…">
-        <button class="primary" id="btn-type">Enviar</button>
-      </div>
-      <div class="actions-row">
-        <button id="btn-back">◀</button>
-        <button id="btn-home">⌂</button>
-        <button id="btn-volup">▲</button>
-        <button id="btn-voldown">▼</button>
-        <button id="btn-power">⏻</button>
-      </div>
-      <div class="actions-row">
-        <button id="btn-swipe-up">↑ Swipe</button>
-        <button id="btn-swipe-down">↓ Swipe</button>
-      </div>
-      <pre id="action-log"></pre>
+  <!-- Coluna 3: Mapa e Histórico -->
+  <div class="panel" id="map-panel">
+    <h3>Mapa e Histórico</h3>
+    <div id="map-container"></div>
+    <div id="history-list">
+      <div style="color:var(--muted); text-align:center; padding:10px;">Sem histórico</div>
     </div>
   </div>
 
 </div>
 
-<!-- Tudo local: nada é carregado de CDNs.
-     scrcpy-bundle.js é gerado por `npm run build` (ver panel/package.json) -->
 <script src="/static/leaflet.js"></script>
 <script src="/static/scrcpy-bundle.js"></script>
 <script src="/app.js"></script>
