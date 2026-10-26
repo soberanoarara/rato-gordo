@@ -301,7 +301,7 @@ function showGrid() {
   setGridLayout(2);
 }
 
-function showDetail(serial) {
+async function showDetail(serial) {
   currentView = 'detail';
   document.getElementById('dashboard-view').style.display = 'none';
   document.getElementById('grid-view').classList.remove('active');
@@ -316,6 +316,17 @@ function showDetail(serial) {
   initMap();
   loadHistory(serial);
   
+  // Garante que a sessão está iniciada no backend
+  const d = devices.find(x => x.serial === serial);
+  if (d && d.online) {
+      if (!d.video) {
+          logDebug(`A garantir sessão no backend para ${serial}...`);
+          await authFetch(`/api/device/${serial}/start`, {method: 'POST'});
+      } else {
+          logDebug(`Sessão já ativa para ${serial}. A ligar player local.`);
+      }
+  }
+
   if (!detailPlayer) detailPlayer = createPlayer('video-container');
   if (detailPlayer) detailPlayer.connect(serial);
   
@@ -389,81 +400,97 @@ function startGridLogs() {
                     const card = document.getElementById(`grid-card-${d.serial}`);
                     if (card) {
                         const infoDiv = card.querySelector('.grid-info');
-                        if (infoDiv && d.last_location) {
+                        if (infoDiv && d.last_olocation) {
                             infoDiv.innerHTML = `${d.brand || '?'} | Android ${d.android_version || '?'}<br>Fonte: ${d.last_location.source} | Lat: ${d.last_location.lat.toFixed(4)} Lon: ${d.last_location.lon.toFixed(4)}`;
                         }
                     }
+                    
+                   
+                    
                 });
             }
         }
     }, 5000);
 }
+
 function renderGrid() {
-  logDebug("A renderizar a grelha...");
   const container = document.getElementById('grid-container');
-  container.innerHTML = '';
   const online = devices.filter(d => d.online);
   
   if(online.length === 0) {
-      logDebug("Nenhum dispositivo online para mostrar na grelha.", true);
       container.innerHTML = '<p style="color:var(--muted)">Nenhum dispositivo online.</p>';
       return;
   }
 
-  online.forEach(d => {
-    logDebug(`A criar card para ${d.serial}...`);
-    const el = document.createElement('div');
-    el.className = `grid-card ${activeTarget === d.serial ? 'selected' : ''}`;
-    el.id = `grid-card-${d.serial}`;
-    
-    el.innerHTML = `
-      <div class="grid-card-header">
-        <span>${d.model || d.serial}</span>
-        <span style="color:var(--success)">ONLINE</span>
-      </div>
-      <div class="grid-video" id="video-grid-${d.serial}"></div>
-      <div class="grid-info">
-        ${d.brand || '?'} | Android ${d.android_version || '?'}<br>
-        ${d.last_location ? `Fonte: ${d.last_location.source} | Lat: ${d.last_location.lat.toFixed(4)} Lon: ${d.last_location.lon.toFixed(4)}` : 'Sem localização'}
-      </div>
-    `;
-    
-    el.onclick = () => {
-      activeTarget = d.serial;
-      document.querySelectorAll('.grid-card').forEach(c => c.classList.remove('selected'));
-      el.classList.add('selected');
-      logDebug(`Dispositivo alvo selecionado: ${d.serial}`);
-    };
+  // Verifica se os cards já existem. Se sim, atualiza apenas o texto.
+  let needsRebuild = false;
+  const existingCards = container.querySelectorAll('.grid-card');
+  
+  if (existingCards.length !== online.length) {
+      needsRebuild = true;
+  } else {
+      // Verifica se os seriais mudaram
+      for (let i = 0; i < online.length; i++) {
+          if (existingCards[i].id !== `grid-card-${online[i].serial}`) {
+              needsRebuild = true;
+              break;
+          }
+      }
+  }
 
-    container.appendChild(el);
-    
-    if (!gridPlayers[d.serial]) {
-        logDebug(`A tentar criar player para ${d.serial}...`);
-        setTimeout(() => {
-            if (!window.ScrcpyPanel) {
-                logDebug("ERRO CRÍTICO: window.ScrcpyPanel não está definido. O bundle falhou.", true);
-                return;
-            }
-            const containerVideo = document.getElementById(`video-grid-${d.serial}`);
-            if (!containerVideo) {
-                logDebug(`ERRO: Container de vídeo para ${d.serial} não encontrado.`, true);
-                return;
-            }
-            
-            try {
-                const p = new window.ScrcpyPanel.ScreenPlayer(containerVideo, {
+  if (needsRebuild) {
+      // Se for a primeira vez ou a lista mudou, recria tudo
+      logDebug("Grelha reconstruída (novos dispositivos).");
+      container.innerHTML = '';
+      online.forEach(d => {
+        const el = document.createElement('div');
+        el.className = `grid-card ${activeTarget === d.serial ? 'selected' : ''}`;
+        el.id = `grid-card-${d.serial}`;
+        
+        el.innerHTML = `
+          <div class="grid-card-header">
+            <span>${d.model || d.serial}</span>
+            <span style="color:var(--success)">ONLINE</span>
+          </div>
+          <div class="grid-video" id="video-grid-${d.serial}"></div>
+          <div class="grid-info">
+            ${d.brand || '?'} | Android ${d.android_version || '?'}<br>
+            ${d.last_location ? `Fonte: ${d.last_location.source} | Lat: ${d.last_location.lat.toFixed(4)} Lon: ${d.last_location.lon.toFixed(4)}` : 'Sem localização'}
+          </div>
+        `;
+        
+        el.onclick = () => {
+          activeTarget = d.serial;
+          document.querySelectorAll('.grid-card').forEach(c => c.classList.remove('selected'));
+          el.classList.add('selected');
+          logDebug(`Dispositivo alvo selecionado: ${d.serial}`);
+        };
+        container.appendChild(el);
+
+        if (!gridPlayers[d.serial]) {
+            setTimeout(() => {
+                if (!window.ScrcpyPanel) return;
+                const p = new window.ScrcpyPanel.ScreenPlayer(document.getElementById(`video-grid-${d.serial}`), {
                     getToken: () => TOKEN,
-                    onStatus: (msg) => { logDebug(`[Vídeo ${d.serial}] ${msg}`); }
+                    onStatus: (msg) => {}
                 });
                 p.connect(d.serial);
                 gridPlayers[d.serial] = p;
-                logDebug(`Player criado e ligado para ${d.serial}.`);
-            } catch(e) {
-                logDebug(`ERRO ao criar player para ${d.serial}: ${e.message}`, true);
-            }
-        }, 100);
-    }
-  });
+            }, 100);
+        }
+      });
+  } else {
+      // Se os cards já existem, apenas atualiza os textos sem tocar nos canvas
+      online.forEach(d => {
+          const card = document.getElementById(`grid-card-${d.serial}`);
+          if (card) {
+              const infoDiv = card.querySelector('.grid-info');
+              if (infoDiv) {
+                  infoDiv.innerHTML = `${d.brand || '?'} | Android ${d.android_version || '?'}<br>${d.last_location ? `Fonte: ${d.last_location.source} | Lat: ${d.last_location.lat.toFixed(4)} Lon: ${d.last_location.lon.toFixed(4)}` : 'Sem localização'}`;
+              }
+          }
+      });
+  }
 }
 
 
@@ -482,35 +509,22 @@ async function sendCmd(body) {
   } catch(e) { console.error(e); }
 }
 
-document.getElementById('btn-home-key').onclick = () => sendCmd({action: 'key', keycode: 3});
-document.getElementById('btn-back-key').onclick = () => sendCmd({action: 'key', keycode: 4});
-document.getElementById('btn-power-key').onclick = () => sendCmd({action: 'key', keycode: 26});
-document.getElementById('btn-swipe-up').onclick = () => sendCmd({action: 'swipe', x1: 540, y1: 1600, x2: 540, y2: 600, ms: 300});
-document.getElementById('btn-swipe-down').onclick = () => sendCmd({action: 'swipe', x1: 540, y1: 600, x2: 540, y2: 1600, ms: 300});
-
-document.getElementById('btn-unlock').onclick = () => {
-  const input = document.getElementById('unlock-input');
-  const pin = input.value.trim();
-  if (pin && activeTarget) {
-    sendCmd({action: 'type', text: pin});
-    setTimeout(() => sendCmd({action: 'key', keycode: 66}), 500);
-    input.value = '';
-  }
-};
-
 // ==== LIGAR TODOS ====
 document.getElementById('btn-connect-all').onclick = async () => {
+  const btn = document.getElementById('btn-connect-all');
+  if (btn.disabled) return;
+  btn.disabled = true;
+  btn.textContent = "A ligar...";
+
   logDebug("Botão 'Ligar Todos' clicado. A iniciar sessões...");
   const online = devices.filter(d => d.online);
-  logDebug(`Dispositivos online encontrados: ${online.length}`);
   
   for (const d of online) {
     logDebug(`A tentar iniciar sessão para: ${d.serial}...`);
     try {
         const r = await authFetch(`/api/device/${d.serial}/start`, {method: 'POST'});
         if (r.ok) {
-            const j = await r.json();
-            logDebug(`Sessão iniciada em ${d.serial}. Resposta: ${JSON.stringify(j)}`);
+            logDebug(`Sessão iniciada em ${d.serial}.`);
         } else {
             logDebug(`Falha ao iniciar ${d.serial}. HTTP ${r.status}`, true);
         }
@@ -519,8 +533,9 @@ document.getElementById('btn-connect-all').onclick = async () => {
     }
   }
   
-  logDebug("Passando para a Vista de Grelha...");
   showGrid();
+  btn.disabled = false;
+  btn.textContent = "Ligar Todos & Ver Grelha";
 };
 
 document.getElementById('btn-back').onclick = showDashboard;
@@ -574,7 +589,6 @@ async function loadHistory(serial) {
   } catch (e) { console.error(e); }
 }
 
-// ==== ARRANQUE ====
 async function refreshDevices() {
   try {
     const r = await authFetch('/api/devices');
@@ -588,15 +602,34 @@ async function refreshDevices() {
   } catch { setConn(false); }
 }
 
+// ==== ARRANQUE ====
 async function init() {
   if (!await ensureAuth()) return;
   
+  // Adiciona o evento de clique no vídeo do detalhe
   document.getElementById('video-container').addEventListener('click', (e) => {
     if (!activeTarget || !detailPlayer || !detailPlayer.canvas) return;
     const c = detailPlayer.canvas;
     const p = window.ScrcpyPanel.mapClick(c.getBoundingClientRect(), c.width, c.height, e.clientX, e.clientY);
     if (p) sendCmd({action: 'tap', x: p.x, y: p.y});
   });
+
+  // Adiciona os eventos dos botões de controlo
+  document.getElementById('btn-home-key').onclick = () => sendCmd({action: 'key', keycode: 3});
+  document.getElementById('btn-back-key').onclick = () => sendCmd({action: 'key', keycode: 4});
+  document.getElementById('btn-power-key').onclick = () => sendCmd({action: 'key', keycode: 26});
+  document.getElementById('btn-swipe-up').onclick = () => sendCmd({action: 'swipe', x1: 540, y1: 1600, x2: 540, y2: 600, ms: 300});
+  document.getElementById('btn-swipe-down').onclick = () => sendCmd({action: 'swipe', x1: 540, y1: 600, x2: 540, y2: 1600, ms: 300});
+
+  document.getElementById('btn-unlock').onclick = () => {
+    const input = document.getElementById('unlock-input');
+    const pin = input.value.trim();
+    if (pin && activeTarget) {
+      sendCmd({action: 'type', text: pin});
+      setTimeout(() => sendCmd({action: 'key', keycode: 66}), 500);
+      input.value = '';
+    }
+  };
 
   refreshDevices();
   setInterval(refreshDevices, 5000);
