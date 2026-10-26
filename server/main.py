@@ -173,15 +173,20 @@ async def allowed_keys(_: str = Depends(require_auth)):
 # ---------- sessão ----------
 @app.post("/api/device/{serial}/start")
 async def start_session(serial: str, _: str = Depends(require_auth)):
-    await _require_adb_serial(serial)
-    s = await registry.ensure_started(serial, location_sink)
-    return {
-        "ok": True,
-        "video_active": s.video_active,
-        "control": bool(s.control and s.control.ready),
-        "last_error": s.last_error or None,
-    }
-
+    print(f"\n[BACKEND] Recebido pedido de START para o dispositivo: {serial}")
+    try:
+        await _require_adb_serial(serial)
+        s = await registry.ensure_started(serial, location_sink)
+        print(f"[BACKEND] Sessão garantida para {serial}. Vídeo ativo? {s.video_active}")
+        return {
+            "ok": True,
+            "video_active": s.video_active,
+            "control": bool(s.control and s.control.ready),
+            "last_error": s.last_error or None,
+        }
+    except Exception as e:
+        print(f"[BACKEND] ERRO ao iniciar {serial}: {e}")
+        raise
 
 # ---------- comandos ----------
 def _validate_cmd(body: CommandRequest) -> None:

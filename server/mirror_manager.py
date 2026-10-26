@@ -43,7 +43,7 @@ from scrcpy_control import ScrcpyControlChannel, ScrcpyControlError, ScreenSize
 
 SCRCPY_VERSION = os.environ.get("SCRCPY_VERSION", "4.1")
 SCRCPY_TCP_HOST = os.environ.get("SCRCPY_TCP_HOST", "127.0.0.1")
-SCRCPY_MAX_SIZE = int(os.environ.get("SCRCPY_MAX_SIZE", "1920"))
+SCRCPY_MAX_SIZE = int(os.environ.get("SCRCPY_MAX_SIZE", "820"))
 SCRCPY_BIT_RATE = os.environ.get("SCRCPY_BIT_RATE", "")  # ex.: "4M"
 REMOTE_JAR = "/data/local/tmp/scrcpy-server-manual.jar"
 
@@ -79,7 +79,7 @@ def server_args() -> list[str]:
         "send_frame_meta=true",  # obrigatório para o parsing
         "video_codec=h264",
         #  f"max_size={SCRCPY_MAX_SIZE}",
-        "max_size=1024",
+        
     ]"""
 
     return [
