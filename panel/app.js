@@ -1,7 +1,7 @@
+
 'use strict';
 
-const AUTO_SECRET = "manifesty1-lab";
-let TOKEN = localStorage.getItem('token') || null;
+let TOKEN = null; 
 let devices = [];
 let activeTarget = null; 
 let gridPlayers = {};    
@@ -10,18 +10,17 @@ let map = null;
 let markers = {};
 let logInterval = null;
 let gridInterval = null;
-let currentView = 'dashboard'; // 'dashboard', 'grid', 'detail'
+let currentView = 'dashboard';
 
 // LOGS DE DEBUG
 const debugLogs = [];
+const AUTO_SECRET = "manifesty1-lab";
 function logDebug(msg, isError = false) {
     const time = new Date().toLocaleTimeString();
     const prefix = isError ? "[ERRO]" : "[INFO]";
     const text = `${time} ${prefix} ${msg}`;
     debugLogs.push(text);
-    console.log(text); // Também vai para a consola do browser (F12)
-    
-    // Atualiza o painel visual se ele existir
+    console.log(text);
     const panel = document.getElementById('debug-panel');
     if (panel) {
         panel.innerHTML = debugLogs.map(l => `<div style="color:${l.includes('[ERRO]') ? 'var(--danger)' : 'var(--text)'}">${l}</div>`).join('');
@@ -30,36 +29,28 @@ function logDebug(msg, isError = false) {
 }
 
 
+//=====================================================================================
+// ==== AUTENTICAÇÃO DO PAINEL ====
 
 
-
-
-
-
-
-// ==== AUTH ====
-async function doLogin() {
-  const r = await fetch('/api/auth', {
-    method: 'POST', headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({device: 'panel', secret: AUTO_SECRET})
-  });
-  if (!r.ok) return false;
-  const j = await r.json();
-  TOKEN = j.token; localStorage.setItem('token', TOKEN); return true;
-}
-async function ensureAuth() {
-  if (TOKEN) {
-    const probe = await fetch('/api/devices', {headers: {'Authorization': `Bearer ${TOKEN}`}});
-    if (probe.status === 401) { TOKEN = null; localStorage.removeItem('token'); }
-    else if (probe.ok) return true;
-  }
-  return await doLogin();
-}
 async function authFetch(url, opts = {}) {
-  const headers = Object.assign({}, opts.headers || {}, TOKEN ? {'Authorization': `Bearer ${TOKEN}`} : {});
-  return fetch(url, Object.assign({}, opts, {headers}));
+  // Envia o cookie de sessão E o token estático (para o backend validar a rota)
+  const headers = Object.assign({}, opts.headers || {});
+  if (TOKEN) {
+    headers['Authorization'] = `Bearer ${TOKEN}`;
+  }
+  return fetch(url, Object.assign({}, opts, { headers, credentials: 'same-origin' }));
 }
 
+async function checkSession() {
+  try {
+    const r = await fetch('/api/panel/session', { method: 'GET', credentials: 'same-origin' });
+    return r.ok;
+  } catch { return false; }
+}
+
+
+   
 // ==== INJETAR CSS ====
 document.documentElement.setAttribute('data-theme', 'dark');
 const style = document.createElement('style');
@@ -184,11 +175,11 @@ style.textContent = `
     object-fit: contain; 
   }
   
-  .grid-info { 
-    padding: 4px 8px; 
-    font-size: 10px; 
-    font-family: monospace; 
-    color: var(--muted); 
+  .grid-info {
+    padding: 4px 8px;
+    font-size: 10px;
+    font-family: monospace;
+    color: var(--muted);
     border-top: 1px solid var(--border);
     flex-shrink: 0;
   }
@@ -197,8 +188,17 @@ document.head.appendChild(style);
 
 // ==== CONSTRUIR DOM ====
 document.body.innerHTML = `
+<div id="login-screen" style="display:flex;">
+  <div class="login-box">
+    <h2>ACESSO RESTRITO</h2>
+    <input type="text" id="username" placeholder="Utilizador" autocomplete="username">
+    <input type="password" id="password" placeholder="Password" autocomplete="current-password">
+    <button id="btn-login">ENTRAR</button>
+    <div id="login-error" style="display:none;">Credenciais inválidas</div>
+  </div>
+</div>
 <header>
-  <h1 style="font-size:18px; margin:0; color:var(--primary); text-transform:uppercase;">MAD-Lab</h1>
+  <h1 style="font-size:18px; margin:0; color:var(--primary); text-transform:uppercase;">MANIFESTY-ONE</h1>
   <span class="badge" id="conn-badge" style="margin-left:12px; padding:4px 12px; background:var(--border); border-radius:4px; font-size:12px;">a ligar…</span>
   <span class="badge" id="clock" style="margin-left:12px; padding:4px 12px; background:var(--border); border-radius:4px; font-size:12px;"></span>
 </header>
@@ -604,7 +604,7 @@ async function refreshDevices() {
 
 // ==== ARRANQUE ====
 async function init() {
-  if (!await ensureAuth()) return;
+  //if (!await ensureAuth()) return;
   
   // Adiciona o evento de clique no vídeo do detalhe
   document.getElementById('video-container').addEventListener('click', (e) => {
@@ -635,8 +635,6 @@ async function init() {
   setInterval(refreshDevices, 5000);
 }
 
-init();
-
 
 // ==== CONTROLO DE TAMANHO DA GRELHA ====
 function setGridLayout(cols) {
@@ -657,3 +655,71 @@ function setGridLayout(cols) {
 document.getElementById('btn-grid-size-1').onclick = () => setGridLayout(1);
 document.getElementById('btn-grid-size-2').onclick = () => setGridLayout(2);
 document.getElementById('btn-grid-size-3').onclick = () => setGridLayout(3);
+
+
+// (Deixa a linha do btn-grid-size-3 fechada com ponto e vírgula)
+
+// ==== EVENTO DE LOGIN (Adicionado aqui porque o botão só existe após o HTML ser injetado) ====
+document.getElementById('btn-login').onclick = async (e) => {
+  e.preventDefault();
+  const user = document.getElementById('username').value;
+  const pass = document.getElementById('password').value;
+  const err = document.getElementById('login-error');
+  const btn = document.getElementById('btn-login');
+  
+  if (err) err.style.display = 'none';
+  btn.textContent = 'A autenticar...';
+  btn.disabled = true;
+
+  try {
+    const r = await fetch('/api/login', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({username: user, password: pass})
+    });
+
+    if (r.ok) {
+      window.location.reload();
+    } else {
+      if (err) err.style.display = 'block';
+      btn.textContent = 'ENTRAR';
+      btn.disabled = false;
+    }
+  } catch (error) {
+    if (err) { err.style.display = 'block'; err.textContent = "Erro de rede"; }
+    btn.textContent = 'ENTRAR';
+    btn.disabled = false;
+  }
+};
+
+
+
+// ==== ARRANQUE SEGURO ====
+async function startApp() {
+    const isValid = await checkSession();
+    
+    if (isValid) {
+        // Sessão válida: esconde login e inicia dashboard
+        document.getElementById('login-screen').style.display = 'none';
+        document.getElementById('dashboard-view').style.display = 'block';
+        // Obtém o token estático para os WebSockets de vídeo
+        try {
+            const tr = await fetch('/api/auth', {
+                method: 'POST', headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({device: 'panel', secret: AUTO_SECRET})
+            });
+            if (tr.ok) {
+                const tj = await tr.json();
+                TOKEN = tj.token;
+            }
+        } catch (e) { console.warn("Sem token para WebSocket de vídeo"); }
+        init(); // Chama o init aqui, e SÓ aqui.
+    } else {
+        // Sem sessão: mostra o login
+        document.getElementById('login-screen').style.display = 'flex';
+        document.getElementById('dashboard-view').style.display = 'none';
+    }
+}
+
+// Arranca o fluxo do painel
+startApp();

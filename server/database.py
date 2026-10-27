@@ -4,6 +4,7 @@ from typing import Optional
 from sqlmodel import SQLModel, Field, create_engine, Session, select
 import math
 import os
+from security import get_password_hash, verify_password
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 sqlite_url = f"sqlite:///{os.path.join(BASE_DIR, 'lab.db')}"
@@ -31,6 +32,7 @@ class LocationHistory(SQLModel, table=True):
 
 def init_db():
     SQLModel.metadata.create_all(engine)
+    create_default_admin()
 
 def register_device(serial: str, brand: str, model: str, android: str):
     with Session(engine) as session:
@@ -80,3 +82,26 @@ def get_history(serial: str, limit: int = 50) -> list[LocationHistory]:
         return list(session.exec(
             select(LocationHistory).where(LocationHistory.serial == serial).order_by(LocationHistory.timestamp.desc()).limit(limit)
         ).all())
+
+
+class User(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    username: str = Field(unique=True, index=True)
+    hashed_password: str
+
+def create_default_admin():
+    """Cria o utilizador 'admin' com a password 'labdemo' se não existir."""
+    with Session(engine) as session:
+        user = session.exec(select(User).where(User.username == "aidem")).first()
+        if not user:
+            print("[DB] A criar utilizador aidem padrão (password: labdemo1)")
+            admin = User(username="aidem", hashed_password=get_password_hash("labdemo1"))
+            session.add(admin)
+            session.commit()
+
+def authenticate_user(username: str, password: str) -> bool:
+    with Session(engine) as session:
+        user = session.exec(select(User).where(User.username == username)).first()
+        if not user:
+            return False
+        return verify_password(password, user.hashed_password)

@@ -1,13 +1,22 @@
 """Servidor central do lab: HTTP autenticado + 3 canais WebSocket."""
+
 import asyncio
 import re
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import (FastAPI, WebSocket, WebSocketDisconnect,
-                     HTTPException, Depends, Header)
+from fastapi import (
+    FastAPI,
+    WebSocket,
+    WebSocketDisconnect,
+    HTTPException,
+    Depends,
+    Header,
+)
 from fastapi.staticfiles import StaticFiles
 from config import settings
+from fastapi import Cookie
+from typing import Optional
 from schemas import LocationReport, TokenRequest, TokenResponse, CommandRequest
 from auth import issue_token, validate, purge_expired
 from location_manager import store
@@ -17,9 +26,12 @@ from scrcpy_control import ScrcpyControlError
 from database import init_db, get_registered_devices, get_history
 from ip_locator import get_location_by_ip
 from pydantic import BaseModel
-from database import add_location # 
-
-
+from database import add_location  #
+from database import authenticate_user
+from fastapi import Response
+import secrets
+from datetime import datetime, timedelta
+from typing import Optional
 
 BASE_DIR = Path(__file__).resolve().parent
 PANEL_DIR = BASE_DIR.parent / "panel"
@@ -31,10 +43,12 @@ SERIAL_RE = re.compile(r"^[A-Za-z0-9._:\-]{1,64}$")
 @asynccontextmanager
 async def lifespan(app):
     init_db()
+
     async def _purge():
         while True:
             purge_expired()
             await asyncio.sleep(300)
+
     purge_task = asyncio.create_task(_purge())
     yield
     purge_task.cancel()
@@ -49,8 +63,11 @@ def require_auth(authorization: str = Header(default="")) -> str:
     if not validate(token):
         raise HTTPException(401, "token inválido ou expirado")
     return token
-    
-async def location_sink(serial: str, lat: float, lon: float, acc: float, source: str = "gps") -> None:
+
+
+async def location_sink(
+    serial: str, lat: float, lon: float, acc: float, source: str = "gps"
+) -> None:
     # Tenta obter o último IP conhecido deste dispositivo (se foi enviado por IP)
     db_dev = get_registered_devices()
     ip_publico = None
@@ -58,22 +75,27 @@ async def location_sink(serial: str, lat: float, lon: float, acc: float, source:
         if d.serial == serial:
             # Se a fonte for IP, ou se já tivermos o IP guardado
             # (Neste caso, a fonte IP já envia o IP via store)
-            pass 
-            
-    data = store.upsert({"device": serial, "lat": lat, "lon": lon,
-                         "accuracy": acc, "source": source})
+            pass
+
+    data = store.upsert(
+        {"device": serial, "lat": lat, "lon": lon, "accuracy": acc, "source": source}
+    )
     await store.broadcast(data)
-    
+
     try:
         from database import add_location
+
         add_location(serial, lat, lon, source=source)
     except Exception as e:
         print(f"Erro ao guardar no SQLite: {e}")
 
+
 async def _enumerate_adb_devices() -> list[str]:
     try:
         proc = await asyncio.create_subprocess_exec(
-            "adb", "devices", "-l",
+            "adb",
+            "devices",
+            "-l",
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.DEVNULL,
         )
@@ -82,7 +104,8 @@ async def _enumerate_adb_devices() -> list[str]:
 
     try:
         out, _ = await asyncio.wait_for(
-            proc.communicate(), timeout=ADB_DISCOVERY_TIMEOUT)
+            proc.communicate(), timeout=ADB_DISCOVERY_TIMEOUT
+        )
     except asyncio.TimeoutError:
         try:
             proc.kill()
@@ -121,7 +144,7 @@ async def auth(req: TokenRequest):
 # ---------- telemetria de localização ----------
 @app.post("/api/location")
 async def post_location(loc: LocationReport, _: str = Depends(require_auth)):
-    data = store.upsert(loc.model_dump()) # O model_dump já inclui o ip_publico
+    data = store.upsert(loc.model_dump())  # O model_dump já inclui o ip_publico
     await store.broadcast(data)
     add_location(loc.device, loc.lat, loc.lon, source=loc.source)
     return {"ok": True}
@@ -160,10 +183,20 @@ async def devices(_: str = Depends(require_auth)):
                 "android_version": db_dev.android_version,
                 "video": False,
                 "control": False,
-                "last_location": {"lat": db_dev.last_lat, "lon": db_dev.last_lon, "source": db_dev.last_source, "ts": db_dev.last_seen.timestamp()} if db_dev.last_lat else None,
+                "last_location": (
+                    {
+                        "lat": db_dev.last_lat,
+                        "lon": db_dev.last_lon,
+                        "source": db_dev.last_source,
+                        "ts": db_dev.last_seen.timestamp(),
+                    }
+                    if db_dev.last_lat
+                    else None
+                ),
                 "last_error": None,
             }
     return {"devices": list(out.values())}
+
 
 @app.get("/api/keys")
 async def allowed_keys(_: str = Depends(require_auth)):
@@ -177,7 +210,9 @@ async def start_session(serial: str, _: str = Depends(require_auth)):
     try:
         await _require_adb_serial(serial)
         s = await registry.ensure_started(serial, location_sink)
-        print(f"[BACKEND] Sessão garantida para {serial}. Vídeo ativo? {s.video_active}")
+        print(
+            f"[BACKEND] Sessão garantida para {serial}. Vídeo ativo? {s.video_active}"
+        )
         return {
             "ok": True,
             "video_active": s.video_active,
@@ -187,6 +222,7 @@ async def start_session(serial: str, _: str = Depends(require_auth)):
     except Exception as e:
         print(f"[BACKEND] ERRO ao iniciar {serial}: {e}")
         raise
+
 
 # ---------- comandos ----------
 def _validate_cmd(body: CommandRequest) -> None:
@@ -206,8 +242,7 @@ def _validate_cmd(body: CommandRequest) -> None:
 
 
 @app.post("/api/device/{serial}/cmd")
-async def device_cmd(serial: str, body: CommandRequest,
-                     _: str = Depends(require_auth)):
+async def device_cmd(serial: str, body: CommandRequest, _: str = Depends(require_auth)):
     _validate_cmd(body)
 
     s = registry.get(serial)
@@ -223,7 +258,8 @@ async def device_cmd(serial: str, body: CommandRequest,
                 await s.scrcpy_control.tap(body.x, body.y)
             elif body.action == "swipe":
                 await s.scrcpy_control.swipe(
-                    body.x1, body.y1, body.x2, body.y2, body.ms or 300)
+                    body.x1, body.y1, body.x2, body.y2, body.ms or 300
+                )
             elif body.action == "key":
                 await s.scrcpy_control.key(body.keycode)
             return {"ok": True, "channel": "scrcpy"}
@@ -238,8 +274,7 @@ async def device_cmd(serial: str, body: CommandRequest,
             elif body.action == "tap":
                 s.control.tap(body.x, body.y)
             elif body.action == "swipe":
-                s.control.swipe(body.x1, body.y1, body.x2, body.y2,
-                                body.ms or 300)
+                s.control.swipe(body.x1, body.y1, body.x2, body.y2, body.ms or 300)
             elif body.action == "key":
                 s.control.key(body.keycode)
             return {"ok": True, "channel": "adb"}
@@ -286,8 +321,8 @@ async def stream_ws(ws: WebSocket, serial: str, token: str = ""):
     session = await registry.ensure_started(serial, location_sink)
     if not session.video_active:
         await ws.close(
-            code=4503,
-            reason=(session.last_error or "vídeo indisponível")[:100])
+            code=4503, reason=(session.last_error or "vídeo indisponível")[:100]
+        )
         return
 
     sub = session.subscribe()
@@ -312,7 +347,8 @@ async def stream_ws(ws: WebSocket, serial: str, token: str = ""):
     watch_t = asyncio.create_task(watcher())
     try:
         done, pending = await asyncio.wait(
-            {send_t, watch_t}, return_when=asyncio.FIRST_COMPLETED)
+            {send_t, watch_t}, return_when=asyncio.FIRST_COMPLETED
+        )
         for t in pending:
             t.cancel()
         if send_t in done and not send_t.cancelled() and send_t.exception() is None:
@@ -326,21 +362,37 @@ async def stream_ws(ws: WebSocket, serial: str, token: str = ""):
         for t in (send_t, watch_t):
             t.cancel()
         session.unsubscribe(sub)
+
+
 @app.get("/api/device/{serial}/logs")
 async def device_logs(serial: str, _: str = Depends(require_auth)):
     s = registry.get(serial)
-    if not s: return {"install": [], "server": []}
+    if not s:
+        return {"install": [], "server": []}
     return {"install": list(s.install_log), "server": list(s.server_log)}
+
 
 @app.get("/api/device/{serial}/history")
 async def device_history(serial: str, _: str = Depends(require_auth)):
     hist = get_history(serial)
-    return {"history": [{"lat": h.lat, "lon": h.lon, "source": h.source, "ts": h.timestamp.timestamp(), "distance": h.distance_from_prev} for h in hist]}
+    return {
+        "history": [
+            {
+                "lat": h.lat,
+                "lon": h.lon,
+                "source": h.source,
+                "ts": h.timestamp.timestamp(),
+                "distance": h.distance_from_prev,
+            }
+            for h in hist
+        ]
+    }
 
 
 class IpReport(BaseModel):
     device: str
     ip: str
+
 
 @app.post("/api/location/ip")
 async def post_location_ip(report: IpReport, _: str = Depends(require_auth)):
@@ -348,12 +400,53 @@ async def post_location_ip(report: IpReport, _: str = Depends(require_auth)):
     loc = await get_location_by_ip(report.ip)
     if not loc:
         raise HTTPException(400, "Não foi possível geolocalizar o IP")
-    
+
     lat, lon, city = loc
     # Envia para o store e para o SQLite com a source="ip"
     await location_sink(report.device, lat, lon, 5000.0, source="ip")
-    
+
     return {"ok": True, "city": city}
+
+
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+
+
+# Dicionário em memória para as sessões do painel
+PANEL_SESSIONS: dict[str, datetime] = {}
+SESSION_TTL = timedelta(hours=8)
+
+
+@app.post("/api/login")
+async def login(req: LoginRequest, response: Response):
+    if not authenticate_user(req.username, req.password):
+        raise HTTPException(401, "Credenciais inválidas")
+
+    # Cria uma sessão de painel
+    session_token = secrets.token_urlsafe(32)
+    PANEL_SESSIONS[session_token] = datetime.utcnow() + SESSION_TTL
+
+    # Define o cookie HttpOnly
+    response.set_cookie(
+        key="session_token",
+        value=session_token,
+        httponly=True,
+        samesite="lax",
+        max_age=int(SESSION_TTL.total_seconds()),
+    )
+    return {"ok": True, "message": "Sessão iniciada"}
+
+
+@app.get("/api/panel/session")
+async def panel_session(session_token: Optional[str] = Cookie(default=None)):
+    if not session_token:
+        raise HTTPException(401, "Sessão em falta")
+    expiry = PANEL_SESSIONS.get(session_token)
+    if expiry is None or expiry <= datetime.utcnow():
+        PANEL_SESSIONS.pop(session_token, None)
+        raise HTTPException(401, "Sessão inválida")
+    return {"ok": True}
 
 
 app.mount("/", StaticFiles(directory=PANEL_DIR, html=True), name="panel")

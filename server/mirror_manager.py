@@ -69,7 +69,7 @@ def server_args() -> list[str]:
         SCRCPY_VERSION,
         "log_level=info",
         "tunnel_forward=true",
-        "audio=false",
+        "audio=true",
         "control=true",
         "cleanup=false",
         "clipboard_autosync=false",
