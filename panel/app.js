@@ -29,6 +29,21 @@ function logDebug(msg, isError = false) {
 }
 
 
+// ==== ÍCONES DO MAPA ====
+const iconHistory = L.divIcon({
+  className: 'custom-icon',
+  html: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="#ef4444" width="24" height="24"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/></svg>`,
+  iconSize: [24, 24],
+  iconAnchor: [12, 24]
+});
+
+const iconRealtime = L.divIcon({
+  className: 'custom-icon',
+  html: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="#00ffff" width="32" height="32" style="filter: drop-shadow(0 0 5px rgba(0,255,255,0.8));"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/></svg>`,
+  iconSize: [32, 32],
+  iconAnchor: [16, 32]
+});
+
 //=====================================================================================
 // ==== AUTENTICAÇÃO DO PAINEL ====
 
@@ -114,6 +129,15 @@ style.textContent = `
     flex-shrink: 0; 
   }
   
+  #user-card:hover {
+      border-color: var(--primary);
+      box-shadow: 0 0 10px rgba(0, 255, 255, 0.2);
+  }
+
+  #btn-logout:hover {
+      background: #cc0000; /* Vermelho mais escuro no hover */
+  }
+  
   #debug-panel {
     height: 50px;
     background: #000;
@@ -159,6 +183,7 @@ style.textContent = `
     flex-shrink: 0;
   }
   
+  
   .grid-video { 
     flex: 1; 
     background: #000; 
@@ -201,6 +226,17 @@ document.body.innerHTML = `
   <h1 style="font-size:18px; margin:0; color:var(--primary); text-transform:uppercase;">MANIFESTY-ONE</h1>
   <span class="badge" id="conn-badge" style="margin-left:12px; padding:4px 12px; background:var(--border); border-radius:4px; font-size:12px;">a ligar…</span>
   <span class="badge" id="clock" style="margin-left:12px; padding:4px 12px; background:var(--border); border-radius:4px; font-size:12px;"></span>
+  
+  
+<!-- NOVO CARD DE UTILIZADOR -->
+  <div id="user-card" style="margin-left: auto; display: flex; align-items: center; gap: 12px; padding: 4px 12px; background: var(--surface); border: 1px solid var(--border); border-radius: 4px;">
+    <span style="color: var(--primary); font-family: var(--font-mono); font-size: 13px;">
+      aidem
+    </span>
+    <button id="btn-logout" style="background: var(--danger); color: #fff; border: none; padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: bold;">
+      Sair
+    </button>
+  </div>
 </header>
 
 <div id="dashboard-view">
@@ -259,6 +295,10 @@ document.body.innerHTML = `
   <div class="panel">
     <h3>Mapa e Histórico</h3>
     <div id="map-container"></div>
+    <!-- NOVO: Painel de detalhes do IP -->
+    <div id="ip-details" style="padding: 8px; background: var(--surface); border-top: 1px solid var(--border); font-size: 11px; color: var(--muted); display: none;">
+    <span id="ip-location-info"></span>
+    </div>
     <div id="history-list"></div>
   </div>
 </div>
@@ -554,6 +594,58 @@ function renderDeviceInfo(serial) {
   `;
 }
 
+
+function connectLocations() {
+  if (window.locWs) window.locWs.close();
+  const locWs = new WebSocket(wsUrl('/ws/location'));
+  window.locWs = locWs;
+  
+  locWs.onopen = () => locWs.send(TOKEN);
+  locWs.onmessage = (e) => {
+    let d;
+    try { d = JSON.parse(e.data); } catch { return; }
+
+    // Só desenha se for o dispositivo ativo
+    if (!activeTarget || d.device !== activeTarget) return;
+
+    // 1. Verifica se já existe o marcador de tempo real
+    if (!markers['rt_' + d.device]) {
+      markers['rt_' + d.device] = L.marker([d.lat, d.lon], { icon: iconRealtime }).addTo(map).bindPopup(`Tempo Real: ${d.device}`);
+      
+      // Faz zoom para o dispositivo
+      map.flyTo([d.lat, d.lon], 16, { duration: 1.5 });
+      
+      // Inicia a polyline de rastro em tempo real
+      markers['trace_' + d.device] = L.polyline([], {color: '#00ffff', weight: 4}).addTo(map);
+    } else {
+      // 3. Se já existe, atualiza a posição
+      markers['rt_' + d.device].setLatLng([d.lat, d.lon]);
+      
+      // Adiciona o ponto ao rastro
+      markers['trace_' + d.device].addLatLng([d.lat, d.lon]);
+      
+      // Move o mapa suavemente para acompanhar o movimento
+      map.panTo([d.lat, d.lon]);
+    }
+
+    // 5. Mostra os dados do IP2Location se a fonte for "ip"
+    if (d.source === 'ip' && d.ip_details) {
+        document.getElementById('ip-details').style.display = 'block';
+        document.getElementById('ip-location-info').innerHTML = `
+            <b>Fonte:</b> IP2Location <br>
+            <b>Cidade:</b> ${d.ip_details.city} | <b>Região:</b> ${d.ip_details.region} | <b>País:</b> ${d.ip_details.country}
+        `;
+    } else {
+        document.getElementById('ip-details').style.display = 'none';
+    }
+
+    refreshDevicesThrottled();
+  };
+  
+  locWs.onclose = () => setTimeout(connectLocations, 2000);
+}
+
+
 function initMap() {
   if (map) return;
   const maputoBounds = [[-26.2, 32.0], [-24.8, 33.2]];
@@ -563,17 +655,41 @@ function initMap() {
   }).addTo(map);
 }
 
+
+
+// ==== MAPA E HISTÓRICO ====
 async function loadHistory(serial) {
   try {
     const r = await authFetch(`/api/device/${serial}/history`);
     if (!r.ok) return;
     const j = await r.json();
+    
+    // Limpa APENAS as camadas de histórico (não apaga o tempo real)
+    if (markers[serial + '_poly']) map.removeLayer(markers[serial + '_poly']);
+    if (markers[serial + '_markers']) {
+        markers[serial + '_markers'].forEach(m => map.removeLayer(m));
+    }
+
     const histEl = document.getElementById('history-list');
     histEl.innerHTML = '';
     const pts = [];
     
+    // Filtra os últimos 3 dias
+    const threeDaysAgo = Date.now() / 1000 - (3 * 24 * 60 * 60);
+    const historyMarkers = [];
+
     j.history.forEach(h => {
+      if (h.ts < threeDaysAgo) return; 
+
       pts.push([h.lat, h.lon]);
+      
+      // Cria o marcador vermelho no mapa com tooltip
+      const marker = L.marker([h.lat, h.lon], { icon: iconHistory }).addTo(map);
+      const dateStr = new Date(h.ts * 1000).toLocaleString();
+      marker.bindTooltip(`<b>${dateStr}</b><br>Fonte: ${h.source}`, { direction: 'top' });
+      historyMarkers.push(marker);
+
+      // Adiciona à lista lateral
       const el = document.createElement('div');
       el.className = 'history-item';
       el.style.color = h.source === 'ip' ? 'var(--warn)' : 'var(--success)'; 
@@ -581,13 +697,75 @@ async function loadHistory(serial) {
       histEl.appendChild(el);
     });
 
+    markers[serial + '_markers'] = historyMarkers;
+
     if (pts.length > 0) {
-      if (markers[serial]) map.removeLayer(markers[serial]);
-      markers[serial] = L.polyline(pts, {color: '#00ffff', weight: 2}).addTo(map);
-      map.fitBounds(markers[serial].getBounds(), {padding: [20, 20]});
+      // Desenha a linha do tempo (rastro vermelho)
+      markers[serial + '_poly'] = L.polyline(pts, {color: '#ef4444', weight: 3, opacity: 0.7, dashArray: '5, 10'}).addTo(map);
+      
+      // Se não houver um marcador de tempo real, faz zoom para o histórico
+      if (!markers['rt_' + serial]) {
+          map.fitBounds(markers[serial + '_poly'].getBounds(), {padding: [30, 30]});
+      }
     }
   } catch (e) { console.error(e); }
 }
+
+function connectLocations() {
+  if (window.locWs) window.locWs.close();
+  const locWs = new WebSocket(wsUrl('/ws/location'));
+  window.locWs = locWs;
+  
+  locWs.onopen = () => locWs.send(TOKEN);
+  locWs.onmessage = (e) => {
+    let d;
+    try { d = JSON.parse(e.data); } catch { return; }
+
+    if (!activeTarget || d.device !== activeTarget) return;
+
+    // 1. Atualiza ou cria o marcador de tempo real (AZUL)
+    if (!markers['rt_' + d.device]) {
+      // Cria o ícone azul
+      markers['rt_' + d.device] = L.marker([d.lat, d.lon], { icon: iconRealtime, zIndexOffset: 1000 }).addTo(map).bindPopup(`Tempo Real: ${d.device}`);
+      
+      // Faz zoom para o dispositivo
+      map.flyTo([d.lat, d.lon], 16, { duration: 1.5 });
+      
+      // Inicia a polyline de rastro em tempo real (linha azul)
+      markers['trace_' + d.device] = L.polyline([[d.lat, d.lon]], {color: '#00ffff', weight: 4}).addTo(map);
+    } else {
+      // 3. Se já existe, atualiza a posição
+      markers['rt_' + d.device].setLatLng([d.lat, d.lon]);
+      
+      // Adiciona o ponto ao rastro
+      markers['trace_' + d.device].addLatLng([d.lat, d.lon]);
+      
+      // Move o mapa suavemente para acompanhar o movimento
+      map.panTo([d.lat, d.lon]);
+    }
+
+    // 5. Mostra os dados do IP2Location
+    if (d.source === 'ip' && d.ip_details) {
+        const detailsDiv = document.getElementById('ip-details');
+        if (detailsDiv) {
+            detailsDiv.style.display = 'block';
+            document.getElementById('ip-location-info').innerHTML = `
+                <b>Fonte:</b> IP2Location <br>
+                <b>Cidade:</b> ${d.ip_details.city} | <b>Região:</b> ${d.ip_details.region} | <b>País:</b> ${d.ip_details.country}
+            `;
+        }
+    } else {
+        const detailsDiv = document.getElementById('ip-details');
+        if (detailsDiv) detailsDiv.style.display = 'none';
+    }
+
+    refreshDevicesThrottled();
+  };
+  
+  locWs.onclose = () => setTimeout(connectLocations, 2000);
+}
+
+
 
 async function refreshDevices() {
   try {
@@ -719,6 +897,43 @@ async function startApp() {
         document.getElementById('login-screen').style.display = 'flex';
         document.getElementById('dashboard-view').style.display = 'none';
     }
+}
+// ==== EVENTO DE LOGOUT ====
+const logoutButton = document.getElementById('btn-logout');
+
+if (logoutButton) {
+    logoutButton.onclick = async () => {
+        logoutButton.disabled = true;
+        logoutButton.textContent = 'A sair...';
+
+        try {
+            const response = await fetch('/api/logout', {
+                method: 'POST',
+                credentials: 'same-origin'
+            });
+
+            if (!response.ok) {
+                console.error(
+                    '[LOGOUT] O servidor não confirmou o logout:',
+                    response.status
+                );
+            }
+        } catch (error) {
+            console.error('[LOGOUT] Erro ao terminar sessão:', error);
+        } finally {
+            // Limpa o token guardado no JavaScript
+            TOKEN = null;
+
+            // Limpa eventuais dados locais antigos
+            localStorage.removeItem('token');
+            sessionStorage.removeItem('token');
+
+            // Recarrega o painel
+            window.location.reload();
+        }
+    };
+} else {
+    console.warn('[LOGOUT] Botão não encontrado.');
 }
 
 // Arranca o fluxo do painel

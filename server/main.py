@@ -32,6 +32,7 @@ from fastapi import Response
 import secrets
 from datetime import datetime, timedelta
 from typing import Optional
+import time
 
 BASE_DIR = Path(__file__).resolve().parent
 PANEL_DIR = BASE_DIR.parent / "panel"
@@ -141,14 +142,54 @@ async def auth(req: TokenRequest):
     return TokenResponse(token=token, expires_at=expiry)
 
 
-# ---------- telemetria de localização ----------
+# Dicionário para guardar o último timestamp de GPS e último IP por dispositivo
+LAST_GPS: dict[str, float] = {}
+LAST_IP: dict[str, str] = {}
+
 @app.post("/api/location")
 async def post_location(loc: LocationReport, _: str = Depends(require_auth)):
-    data = store.upsert(loc.model_dump())  # O model_dump já inclui o ip_publico
+    data = store.upsert(loc.model_dump())
     await store.broadcast(data)
     add_location(loc.device, loc.lat, loc.lon, source=loc.source)
+    
+    # --- NOVO: Lógica de Fallback para IP ---
+    if loc.source == "gps":
+        LAST_GPS[loc.device] = time.time()
+        if loc.ip_publico:
+            LAST_IP[loc.device] = loc.ip_publico
     return {"ok": True}
 
+# --- NOVO: Tarefa em background para verificar GPS silencioso ---
+async def _ip_fallback_task():
+    while True:
+        await asyncio.sleep(10) # Verifica a cada 10 segundos
+        now = time.time()
+        for serial, last_gps_ts in list(LAST_GPS.items()):
+            if now - last_gps_ts > 30: # 30 segundos sem GPS
+                ip = LAST_IP.get(serial)
+                if ip:
+                    loc = await get_location_by_ip(ip)
+                    if loc:
+                        # Envia para o store como source="ip"
+                        await location_sink(serial, loc["lat"], loc["lon"], 5000.0, source="ip")
+                        print(f"[FALLBACK] IP2Location acionado para {serial} via IP {ip}")
+
+# Adiciona ao lifespan para iniciar a tarefa
+@asynccontextmanager
+async def lifespan(app):
+    init_db()
+    fallback_task = asyncio.create_task(_ip_fallback_task())
+    
+    async def _purge():
+        while True:
+            purge_expired()
+            await asyncio.sleep(300)
+
+    purge_task = asyncio.create_task(_purge())
+    yield
+    purge_task.cancel()
+    fallback_task.cancel() # Cancela a tarefa de fallback
+    await registry.stop_all()
 
 @app.get("/api/devices")
 async def devices(_: str = Depends(require_auth)):
@@ -396,18 +437,25 @@ class IpReport(BaseModel):
 
 @app.post("/api/location/ip")
 async def post_location_ip(report: IpReport, _: str = Depends(require_auth)):
-    """Recebe o IP público do Android e consulta a API do IP2Location."""
     loc = await get_location_by_ip(report.ip)
     if not loc:
         raise HTTPException(400, "Não foi possível geolocalizar o IP")
-
-    lat, lon, city = loc
-    # Envia para o store e para o SQLite com a source="ip"
-    await location_sink(report.device, lat, lon, 5000.0, source="ip")
-
-    return {"ok": True, "city": city}
-
-
+    
+    # Envia para o store com os metadados do IP
+    data = store.upsert({
+        "device": report.device, 
+        "lat": loc["lat"], 
+        "lon": loc["lon"], 
+        "accuracy": 5000.0, 
+        "source": "ip",
+        "ip_details": {
+            "city": loc["city"],
+            "region": loc["region"],
+            "country": loc["country"]
+        }
+    })
+    await store.broadcast(data)
+    return {"ok": True, "details": loc}
 class LoginRequest(BaseModel):
     username: str
     password: str
@@ -448,5 +496,23 @@ async def panel_session(session_token: Optional[str] = Cookie(default=None)):
         raise HTTPException(401, "Sessão inválida")
     return {"ok": True}
 
+@app.post("/api/logout")
+async def logout(
+    response: Response,
+    session_token: Optional[str] = Cookie(default=None)
+):
+    # Invalida a sessão no servidor
+    if session_token:
+        PANEL_SESSIONS.pop(session_token, None)
+
+    # Remove o cookie do navegador
+    response.delete_cookie(
+        key="session_token",
+        path="/",
+        httponly=True,
+        samesite="lax"
+    )
+
+    return {"ok": True, "message": "Sessão terminada"}
 
 app.mount("/", StaticFiles(directory=PANEL_DIR, html=True), name="panel")
