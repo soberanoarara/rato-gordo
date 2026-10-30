@@ -1,231 +1,1263 @@
+
 <!DOCTYPE html>
 <html lang="pt" data-theme="dark">
 <head>
-<meta charset="utf-8">
-<title>Manifesty-one | Command Center</title>
-<link rel="stylesheet" href="/static/leaflet.css">
-<style>
-  :root {
-    /* Tema Dark (Padrão) - Baseado na imagem */
-    --bg: #0a0f1a;
-    --surface: #111827;
-    --border: #1f2937;
-    --primary: #00ffff; /* Ciano neon */
-    --text: #e5e7eb;
-    --muted: #9ca3af;
-    --success: #10b981;
-    --danger: #ef4444;
-    --font-mono: 'Courier New', monospace;
-  }
-/* Ecrã de Login */
-#login-screen {
-  position: fixed;
-  top: 0; left: 0; width: 100vw; height: 100vh;
-  background-image: url('/static/login.jpg');
-  background-size: cover;
-  background-position: center;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  z-index: 9999;
-}
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#0a0f1a">
 
-.login-box {
-  position: absolute;
-  /* Coordenadas para encaixar na janela desenhada na imagem */
-  /* Terás de ajustar estes valores (top e left) conforme a imagem */
-  top: 35%; 
-  left: 50%;
-  transform: translateX(-50%);
-  
-  width: 350px;
-  padding: 20px;
-  background: rgba(10, 15, 26, 0.4); /* Fundo transparente escuro */
-  border: 2px solid var(--primary); /* Borda ciano */
-  box-shadow: 0 0 15px rgba(0, 255, 255, 0.3); /* Brilho ciano */
-  border-radius: 8px;
-  
-  display: flex;
-  flex-direction: column;
-  gap: 15px;
-}
+  <title>Manifesty-one | Command Center</title>
 
-.login-box input {
-  width: 100%;
-  padding: 10px;
-  background: rgba(0, 0, 0, 0.6);
-  border: 1px solid var(--primary);
-  color: var(--text);
-  border-radius: 4px;
-  font-family: monospace;
-}
+  <link rel="stylesheet" href="/static/leaflet.css">
 
-.login-box input::placeholder {
-  color: rgba(0, 255, 255, 0.5);
-}
+  <style>
+    :root {
+      --bg: #0a0f1a;
+      --surface: #111827;
+      --surface-alt: #0d1421;
+      --border: #1f2937;
+      --primary: #00ffff;
+      --text: #e5e7eb;
+      --muted: #9ca3af;
+      --success: #10b981;
+      --danger: #ef4444;
+      --warning: #f59e0b;
+      --gps: #10b981;
+      --ip: #f59e0b;
+      --history: #ef4444;
+      --realtime: #00ffff;
+      --font-mono: "Courier New", monospace;
+      --header-height: 60px;
+    }
 
-.login-box button {
-  width: 100%;
-  padding: 10px;
-  background: var(--primary);
-  color: #000;
-  border: none;
-  font-weight: bold;
-  border-radius: 4px;
-  cursor: pointer;
-  transition: 0.2s;
-}
+    [data-theme="light"] {
+      --bg: #f3f4f6;
+      --surface: #ffffff;
+      --surface-alt: #e5e7eb;
+      --border: #d1d5db;
+      --primary: #0891b2;
+      --text: #111827;
+      --muted: #6b7280;
+      --success: #059669;
+      --danger: #dc2626;
+      --warning: #d97706;
+      --gps: #059669;
+      --ip: #d97706;
+      --history: #dc2626;
+      --realtime: #0891b2;
+    }
 
-.login-box button:hover {
-  background: #00cccc;
-}
+    * {
+      box-sizing: border-box;
+    }
 
-#login-error {
-  color: var(--danger);
-  font-size: 12px;
-  text-align: center;
-  display: none;
-}
-  
-  [data-theme="light"] {
-    /* Tema Light Alternativo */
-    --bg: #f3f4f6;
-    --surface: #ffffff;
-    --border: #d1d5db;
-    --primary: #0891b2; /* Ciano escuro */
-    --text: #111827;
-    --muted: #6b7280;
-  }
+    html,
+    body {
+      width: 100%;
+      min-height: 100%;
+      margin: 0;
+    }
 
-  * { box-sizing: border-box; }
-  body { margin:0; font-family: system-ui, sans-serif; background:var(--bg); color:var(--text); }
-  
-  /* Header Fixo */
-  header { display:flex; align-items:center; padding:12px 24px; background:var(--surface); border-bottom:2px solid var(--primary); box-shadow: 0 0 15px rgba(0,255,255,0.1); }
-  header h1 { font-size:18px; margin:0; letter-spacing:2px; text-transform:uppercase; color:var(--primary); font-family:var(--font-mono); }
-  .badge { padding:4px 12px; border-radius:4px; background:var(--border); font-size:12px; margin-left:12px; }
-  .badge.on { color:var(--success); border:1px solid var(--success); }
-  .badge.off { color:var(--danger); border:1px solid var(--danger); }
-  
-  /* Botão de Tema */
-  #theme-toggle { margin-left:auto; cursor:pointer; background:none; border:1px solid var(--border); color:var(--text); padding:6px 12px; border-radius:4px; }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: system-ui, sans-serif;
+      overflow-x: hidden;
+    }
 
-  /* === VISTA 1: DASHBOARD === */
-  #dashboard-view { padding: 24px; display: block; }
-  .section-title { font-family: var(--font-mono); color: var(--primary); border-bottom: 1px solid var(--border); padding-bottom: 8px; margin: 24px 0 16px 0; text-transform: uppercase; letter-spacing: 1px; }
-  
-  .device-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; }
-  .device-card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 16px; cursor: pointer; transition: all 0.2s; position: relative; overflow: hidden; }
-  .device-card:hover { border-color: var(--primary); box-shadow: 0 0 20px rgba(0,255,255,0.2); transform: translateY(-2px); }
-  .device-card.online { border-left: 4px solid var(--success); }
-  .device-card.offline { border-left: 4px solid var(--danger); opacity: 0.7; }
-  
-  .device-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
-  .device-name { font-weight: bold; font-size: 16px; }
-  .device-status { font-size: 11px; padding: 2px 8px; border-radius: 12px; background: var(--border); font-family: var(--font-mono); }
-  .device-status.online { color: var(--success); border: 1px solid var(--success); }
-  
-  .device-info { font-size: 12px; color: var(--muted); margin-bottom: 8px; font-family: var(--font-mono); }
-  .device-loc { font-size: 11px; color: var(--primary); }
-  
-  /* === VISTA 2: DETALHE (Gestão Central) === */
-  #detail-view { display: none; height: calc(100vh - 60px); padding: 16px; gap: 16px; grid-template-columns: 300px 1fr 400px; grid-template-rows: 1fr; }
-  #detail-view.active { display: grid; }
-  
-  .panel { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; display: flex; flex-direction: column; overflow: hidden; }
-  .panel h3 { font-size: 13px; margin: 0; padding: 12px; border-bottom: 1px solid var(--border); color: var(--primary); font-family: var(--font-mono); text-transform: uppercase; }
-  
-  /* Coluna Esquerda: Info e Log */
-  #info-panel { gap: 16px; }
-  .info-block { padding: 12px; font-family: var(--font-mono); font-size: 12px; }
-  .info-row { display: flex; justify-content: space-between; margin-bottom: 8px; border-bottom: 1px dashed var(--border); padding-bottom: 4px; }
-  
-  /* Log de Instalação */
-  #install-log { flex: 1; background: #000; color: #0f0; font-family: monospace; font-size: 11px; padding: 8px; overflow-y: auto; white-space: pre-wrap; border-radius: 4px; }
-  
-  /* Coluna Central: Vídeo */
-  #video-panel { background: #000; position: relative; }
-  #video-container { flex: 1; display: flex; align-items: center; justify-content: center; overflow: hidden; }
-  #video-container canvas { max-width: 100%; max-height: 100%; object-fit: contain; cursor: crosshair; }
-  
-  /* Coluna Direita: Mapa e Histórico */
-  #map-panel { gap: 16px; }
-  #map-container { flex: 1; background: #000; min-height: 200px; }
-  #history-list { height: 200px; overflow-y: auto; font-family: var(--font-mono); font-size: 11px; padding: 8px; }
-  .history-item { display: flex; justify-content: space-between; padding: 4px 0; border-bottom: 1px solid var(--border); }
-  
-  /* Botão Voltar */
-  #btn-back { cursor: pointer; background: none; border: 1px solid var(--border); color: var(--primary); padding: 4px 8px; border-radius: 4px; font-size: 12px; margin-bottom: 12px; display: inline-block; }
-</style>
+    button,
+    input {
+      font: inherit;
+    }
+
+    button {
+      cursor: pointer;
+    }
+
+    button:disabled {
+      cursor: not-allowed;
+      opacity: 0.6;
+    }
+
+    /* LOGIN */
+
+    #login-screen {
+      position: fixed;
+      inset: 0;
+      z-index: 9999;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background:
+        linear-gradient(rgba(5, 10, 20, 0.45), rgba(5, 10, 20, 0.7)),
+        url("/static/login.jpg") center / cover no-repeat;
+    }
+
+    .login-box {
+      width: min(350px, calc(100vw - 32px));
+      padding: 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 15px;
+      background: rgba(10, 15, 26, 0.88);
+      border: 2px solid var(--primary);
+      border-radius: 8px;
+      box-shadow: 0 0 22px rgba(0, 255, 255, 0.25);
+    }
+
+    .login-box h2 {
+      margin: 0;
+      color: var(--primary);
+      text-align: center;
+      font-family: var(--font-mono);
+      letter-spacing: 1px;
+    }
+
+    .login-box input {
+      width: 100%;
+      padding: 11px;
+      color: #fff;
+      background: rgba(0, 0, 0, 0.7);
+      border: 1px solid var(--primary);
+      border-radius: 4px;
+      outline: none;
+    }
+
+    .login-box input:focus {
+      box-shadow: 0 0 8px rgba(0, 255, 255, 0.35);
+    }
+
+    .login-box input::placeholder {
+      color: rgba(0, 255, 255, 0.55);
+    }
+
+    .login-box button {
+      padding: 11px;
+      color: #000;
+      background: var(--primary);
+      border: none;
+      border-radius: 4px;
+      font-weight: bold;
+    }
+
+    .login-box button:hover {
+      filter: brightness(0.88);
+    }
+
+    #login-error {
+      display: none;
+      color: var(--danger);
+      font-size: 12px;
+      text-align: center;
+    }
+
+    /* HEADER */
+
+    header {
+      position: relative;
+      z-index: 10;
+      min-height: var(--header-height);
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 10px 20px;
+      background: var(--surface);
+      border-bottom: 2px solid var(--primary);
+      box-shadow: 0 0 15px rgba(0, 255, 255, 0.08);
+    }
+
+    header h1 {
+      margin: 0;
+      color: var(--primary);
+      font-family: var(--font-mono);
+      font-size: 18px;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+
+    .badge {
+      padding: 4px 10px;
+      color: var(--muted);
+      background: var(--border);
+      border: 1px solid transparent;
+      border-radius: 4px;
+      font-family: var(--font-mono);
+      font-size: 11px;
+      white-space: nowrap;
+    }
+
+    .badge.on {
+      color: var(--success);
+      border-color: var(--success);
+    }
+
+    .badge.off {
+      color: var(--danger);
+      border-color: var(--danger);
+    }
+
+    #theme-toggle {
+      margin-left: auto;
+      padding: 6px 10px;
+      color: var(--text);
+      background: transparent;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+    }
+
+    #theme-toggle:hover {
+      border-color: var(--primary);
+    }
+
+    #user-card {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 4px 10px;
+      background: var(--surface-alt);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+    }
+
+    #user-card span {
+      color: var(--primary);
+      font-family: var(--font-mono);
+      font-size: 12px;
+    }
+
+    #btn-logout {
+      padding: 5px 9px;
+      color: #fff;
+      background: var(--danger);
+      border: none;
+      border-radius: 4px;
+      font-size: 12px;
+      font-weight: bold;
+    }
+
+    /* BOTÕES */
+
+    .btn {
+      padding: 7px 10px;
+      color: var(--text);
+      background: #212936;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      font-size: 12px;
+      text-align: center;
+    }
+
+    .btn:hover {
+      background: #303b4b;
+      border-color: var(--primary);
+    }
+
+    .btn.primary {
+      color: #000;
+      background: var(--primary);
+      border-color: var(--primary);
+      font-weight: bold;
+    }
+
+    /* DASHBOARD */
+
+    #dashboard-view {
+      display: block;
+      min-height: calc(100vh - var(--header-height));
+      padding: 24px;
+      overflow-y: auto;
+    }
+
+    .section-title {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin: 24px 0 16px;
+      padding-bottom: 8px;
+      color: var(--primary);
+      border-bottom: 1px solid var(--border);
+      font-family: var(--font-mono);
+      letter-spacing: 1px;
+      text-transform: uppercase;
+    }
+
+    .device-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+      gap: 16px;
+    }
+
+    .device-card {
+      position: relative;
+      overflow: hidden;
+      padding: 16px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      transition: border-color 0.2s, transform 0.2s;
+    }
+
+    .device-card.online {
+      border-left: 4px solid var(--success);
+      cursor: pointer;
+    }
+
+    .device-card.offline {
+      border-left: 4px solid var(--danger);
+      opacity: 0.7;
+    }
+
+    .device-card.online:hover {
+      border-color: var(--primary);
+      box-shadow: 0 0 18px rgba(0, 255, 255, 0.12);
+      transform: translateY(-2px);
+    }
+
+    .device-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+
+    .device-name {
+      overflow-wrap: anywhere;
+      font-size: 15px;
+      font-weight: bold;
+    }
+
+    .device-status {
+      padding: 3px 8px;
+      background: var(--surface-alt);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      font-family: var(--font-mono);
+      font-size: 10px;
+    }
+
+    .device-status.online {
+      color: var(--success);
+      border-color: var(--success);
+    }
+
+    .device-status.offline {
+      color: var(--danger);
+      border-color: var(--danger);
+    }
+
+    .device-info {
+      margin-bottom: 8px;
+      color: var(--muted);
+      font-family: var(--font-mono);
+      font-size: 11px;
+    }
+
+    .device-loc {
+      color: var(--primary);
+      font-family: var(--font-mono);
+      font-size: 11px;
+      overflow-wrap: anywhere;
+    }
+
+    /* GRELHA MULTIVIEW */
+
+    #grid-view {
+      display: none;
+      height: calc(100vh - var(--header-height));
+      min-height: 400px;
+      padding: 12px;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    #grid-view.active {
+      display: flex;
+    }
+
+    #grid-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 8px;
+      flex-shrink: 0;
+    }
+
+    #grid-header > div {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    #grid-header span {
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    #debug-panel {
+      height: 50px;
+      margin-bottom: 8px;
+      padding: 5px 8px;
+      overflow-y: auto;
+      flex-shrink: 0;
+      color: #00ff66;
+      background: #000;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      font-family: monospace;
+      font-size: 10px;
+    }
+
+    #grid-container {
+      display: grid;
+      flex: 1;
+      min-height: 0;
+      gap: 8px;
+      overflow: auto;
+    }
+
+    .grid-card {
+      display: flex;
+      min-height: 0;
+      flex-direction: column;
+      overflow: hidden;
+      background: var(--surface);
+      border: 2px solid var(--border);
+      border-radius: 8px;
+      cursor: pointer;
+    }
+
+    .grid-card.selected {
+      border-color: var(--primary);
+      box-shadow: 0 0 15px rgba(0, 255, 255, 0.2);
+    }
+
+    .grid-card-header {
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      padding: 5px 8px;
+      background: #000;
+      border-bottom: 1px solid var(--border);
+      font-size: 11px;
+      flex-shrink: 0;
+    }
+
+    .grid-video {
+      position: relative;
+      flex: 1;
+      min-height: 100px;
+      overflow: hidden;
+      background: #000;
+    }
+
+    .grid-video canvas {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+    }
+
+    .grid-info {
+      padding: 5px 8px;
+      color: var(--muted);
+      border-top: 1px solid var(--border);
+      font-family: monospace;
+      font-size: 10px;
+      overflow-wrap: anywhere;
+      flex-shrink: 0;
+    }
+
+    /* DETALHE DO DISPOSITIVO */
+
+    #detail-view {
+      display: none;
+      height: calc(100vh - var(--header-height));
+      min-height: 500px;
+      padding: 12px;
+      gap: 12px;
+      grid-template-columns: minmax(220px, 300px) minmax(300px, 1fr) minmax(320px, 40%);
+      grid-template-rows: minmax(0, 1fr);
+      overflow: hidden;
+    }
+
+    #detail-view.active {
+      display: grid;
+    }
+
+    .panel {
+      display: flex;
+      min-width: 0;
+      min-height: 0;
+      flex-direction: column;
+      overflow: hidden;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+    }
+
+    .panel h3 {
+      margin: 0;
+      padding: 11px 12px;
+      color: var(--primary);
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      font-family: var(--font-mono);
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      flex-shrink: 0;
+    }
+
+    #btn-back {
+      margin: 10px;
+      padding: 6px 9px;
+      color: var(--primary);
+      background: transparent;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      text-align: left;
+      flex-shrink: 0;
+    }
+
+    #btn-back:hover {
+      border-color: var(--primary);
+    }
+
+    #device-info-content {
+      padding: 10px 12px;
+      color: var(--text);
+      font-family: var(--font-mono);
+      font-size: 11px;
+      overflow-wrap: anywhere;
+      flex-shrink: 0;
+    }
+
+    #device-info-content > div {
+      margin-bottom: 6px;
+      padding-bottom: 5px;
+      border-bottom: 1px dashed var(--border);
+    }
+
+    /* CONTROLOS DO DISPOSITIVO */
+
+    .controls-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 6px;
+      padding: 10px;
+      flex-shrink: 0;
+    }
+
+    .controls-grid .btn {
+      min-width: 0;
+      padding: 8px 4px;
+    }
+
+    .input-row {
+      display: flex;
+      gap: 7px;
+      padding: 10px;
+      border-top: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+
+    .input-row input {
+      width: 0;
+      min-width: 0;
+      flex: 1;
+      padding: 8px;
+      color: var(--text);
+      background: #000;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      font-family: monospace;
+    }
+
+    /* LOG */
+
+    #install-log {
+      min-height: 80px;
+      flex: 1;
+      margin: 8px;
+      padding: 8px;
+      overflow-y: auto;
+      color: #00ff66;
+      background: #000;
+      border-radius: 4px;
+      font-family: monospace;
+      font-size: 11px;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+    }
+
+    /* VÍDEO */
+
+    #video-panel {
+      position: relative;
+      background: #000;
+    }
+
+    #video-container {
+      position: relative;
+      display: flex;
+      min-height: 0;
+      flex: 1;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      background: #000;
+    }
+
+    #video-container canvas {
+      max-width: 100%;
+      max-height: 100%;
+      object-fit: contain;
+      cursor: crosshair;
+    }
+
+    #video-hint {
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    /* MAPA */
+
+    #map-panel {
+      gap: 0;
+    }
+
+    #map-container {
+      width: 100%;
+      min-height: 180px;
+      flex: 1;
+      background: #080d16;
+      z-index: 1;
+    }
+
+    .map-legend {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 12px;
+      padding: 8px 10px;
+      background: var(--surface-alt);
+      border-top: 1px solid var(--border);
+      border-bottom: 1px solid var(--border);
+      font-family: var(--font-mono);
+      font-size: 10px;
+      flex-shrink: 0;
+    }
+
+    .legend-item {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      color: var(--muted);
+    }
+
+    .legend-dot {
+      display: inline-block;
+      width: 9px;
+      height: 9px;
+      border-radius: 50%;
+    }
+
+    .legend-dot.history {
+      background: var(--history);
+    }
+
+    .legend-dot.realtime {
+      background: var(--realtime);
+      box-shadow: 0 0 7px var(--realtime);
+    }
+
+    .legend-dot.gps {
+      background: var(--gps);
+    }
+
+    .legend-dot.ip {
+      background: var(--ip);
+    }
+
+    /* DETALHES IP */
+
+    #ip-details {
+      display: none;
+      padding: 9px 10px;
+      color: var(--muted);
+      background: var(--surface-alt);
+      border-bottom: 1px solid var(--border);
+      font-family: var(--font-mono);
+      font-size: 10px;
+      line-height: 1.6;
+      overflow-wrap: anywhere;
+      flex-shrink: 0;
+    }
+
+    #ip-location-info {
+      display: block;
+    }
+
+    /* HISTÓRICO */
+
+    #history-heading {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      padding: 9px 10px;
+      color: var(--primary);
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      font-family: var(--font-mono);
+      font-size: 11px;
+      text-transform: uppercase;
+      flex-shrink: 0;
+    }
+
+    #history-heading small {
+      color: var(--muted);
+      font-size: 9px;
+      font-weight: normal;
+    }
+
+    #history-list {
+      height: 190px;
+      min-height: 100px;
+      overflow-y: auto;
+      padding: 5px 9px;
+      background: var(--surface);
+      font-family: var(--font-mono);
+      font-size: 10px;
+      flex-shrink: 0;
+    }
+
+    .history-item {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 8px;
+      padding: 8px 5px;
+      border-bottom: 1px solid var(--border);
+      border-left: 3px solid transparent;
+      cursor: pointer;
+    }
+
+    .history-item:hover {
+      background: var(--surface-alt);
+    }
+
+    .history-item.gps {
+      border-left-color: var(--gps);
+    }
+
+    .history-item.ip {
+      border-left-color: var(--ip);
+    }
+
+    .history-time {
+      color: var(--text);
+      overflow-wrap: anywhere;
+    }
+
+    .history-meta {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 3px;
+      text-align: right;
+    }
+
+    .history-source {
+      font-weight: bold;
+    }
+
+    .history-source.gps {
+      color: var(--gps);
+    }
+
+    .history-source.ip {
+      color: var(--ip);
+    }
+
+    .history-distance {
+      color: var(--muted);
+      font-size: 9px;
+    }
+
+    .history-empty {
+      padding: 18px 8px;
+      color: var(--muted);
+      text-align: center;
+    }
+
+    /* ÍCONES PERSONALIZADOS LEAFLET */
+
+    .custom-icon {
+      background: transparent;
+      border: none;
+    }
+
+    /* RESPONSIVIDADE */
+
+    @media (max-width: 1100px) {
+      #detail-view {
+        grid-template-columns: minmax(190px, 250px) minmax(250px, 1fr);
+        grid-template-rows: minmax(350px, 1fr) minmax(350px, 1fr);
+        height: auto;
+        min-height: calc(100vh - var(--header-height));
+        overflow: visible;
+      }
+
+      #info-panel {
+        grid-column: 1;
+        grid-row: 1 / 3;
+      }
+
+      #video-panel {
+        grid-column: 2;
+        grid-row: 1;
+        min-height: 350px;
+      }
+
+      #map-panel {
+        grid-column: 2;
+        grid-row: 2;
+        min-height: 350px;
+      }
+    }
+
+    @media (max-width: 700px) {
+      header {
+        flex-wrap: wrap;
+        padding: 10px;
+      }
+
+      header h1 {
+        font-size: 15px;
+      }
+
+      #theme-toggle {
+        margin-left: auto;
+      }
+
+      #user-card {
+        margin-left: 0 !important;
+      }
+
+      #dashboard-view {
+        padding: 12px;
+      }
+
+      .section-title {
+        align-items: flex-start;
+        flex-direction: column;
+      }
+
+      #detail-view {
+        display: none;
+        height: auto;
+        min-height: 0;
+        padding: 8px;
+        grid-template-columns: minmax(0, 1fr);
+        grid-template-rows: auto;
+        overflow: visible;
+      }
+
+      #detail-view.active {
+        display: grid;
+      }
+
+      #info-panel,
+      #video-panel,
+      #map-panel {
+        grid-column: 1;
+        grid-row: auto;
+        min-height: 300px;
+      }
+
+      #info-panel {
+        min-height: 400px;
+      }
+
+      #video-panel {
+        height: 55vh;
+      }
+
+      #map-panel {
+        height: 600px;
+      }
+
+      #map-container {
+        min-height: 300px;
+      }
+
+      #history-list {
+        height: 190px;
+      }
+
+      #grid-view {
+        height: calc(100vh - 100px);
+      }
+
+      #grid-header {
+        align-items: flex-start;
+        flex-direction: column;
+      }
+
+      #grid-container {
+        grid-template-columns: 1fr !important;
+        grid-template-rows: auto !important;
+        overflow-y: auto;
+      }
+
+      .grid-card {
+        min-height: 260px;
+      }
+    }
+  </style>
 </head>
+
 <body>
 
-<div id="login-screen" style="display: flex;">
-  <div class="login-box">
-    <h2 style="text-align:center; margin:0; color:var(--primary);">ACESSO RESTRITO</h2>
-    <input type="text" id="username" placeholder="Utilizador" autocomplete="off">
-    <input type="password" id="password" placeholder="Password">
-    <button id="btn-login">ENTRAR</button>
-    <div id="login-error" style="display:none; color:var(--danger); text-align:center; font-size:12px;">Credenciais inválidas</div>
-  </div>
-</div>
+  <!-- LOGIN -->
+  <div id="login-screen">
+    <div class="login-box">
+      <h2>ACESSO RESTRITO</h2>
 
+      <input
+        type="text"
+        id="username"
+        placeholder="Utilizador"
+        autocomplete="username"
+      >
 
-<header>
-  <h1>MAD-Lab</h1>
-  <span class="badge" id="conn-badge">a ligar…</span>
-  <span class="badge" id="clock"></span>
-  <button id="theme-toggle">Alternar Tema</button>
-</header>
+      <input
+        type="password"
+        id="password"
+        placeholder="Password"
+        autocomplete="current-password"
+      >
 
-<!-- VISTA 1: DASHBOARD -->
-<div id="dashboard-view">
-  <div class="section-title">Dispositivos Online</div>
-  <div class="device-grid" id="online-grid">
-    <div class="empty" style="color:var(--muted); font-size:13px;">Nenhum dispositivo ligado.</div>
-  </div>
+      <button id="btn-login">ENTRAR</button>
 
-  <div class="section-title">Dispositivos Offline (Registados)</div>
-  <div class="device-grid" id="offline-grid">
-    <div class="empty" style="color:var(--muted); font-size:13px;">Sem registos.</div>
-  </div>
-</div>
-
-<!-- VISTA 2: DETALHE (Gestão Central) -->
-<div id="detail-view">
-  
-  <!-- Coluna 1: Info e Log -->
-  <div class="panel" id="info-panel">
-    <h3>Informação do Alvo</h3>
-    <button id="btn-back">← Voltar ao Dashboard</button>
-    <div class="info-block" id="device-info-content">
-      <!-- Preenchido via JS -->
-    </div>
-    <h3>Log de Instalação</h3>
-    <div id="install-log">A aguardar...</div>
-  </div>
-
-  <!-- Coluna 2: Vídeo -->
-  <div class="panel" id="video-panel">
-    <h3>Ecrã do Dispositivo</h3>
-    <div id="video-container">
-      <span id="video-hint" style="color:var(--muted);">Stream indisponível</span>
+      <div id="login-error">
+        Credenciais inválidas
+      </div>
     </div>
   </div>
 
-  <!-- Coluna 3: Mapa e Histórico -->
-  <div class="panel" id="map-panel">
-    <h3>Mapa e Histórico</h3>
-    <div id="map-container"></div>
-    <div id="history-list">
-      <div style="color:var(--muted); text-align:center; padding:10px;">Sem histórico</div>
+  <!-- HEADER -->
+  <header>
+    <h1>MANIFESTY-ONE</h1>
+
+    <span class="badge" id="conn-badge">
+      a ligar…
+    </span>
+
+    <span class="badge" id="clock"></span>
+
+    <button id="theme-toggle" type="button">
+      Alternar Tema
+    </button>
+
+    <div id="user-card">
+      <span>aidem</span>
+
+      <button id="btn-logout" type="button">
+        Sair
+      </button>
     </div>
-  </div>
+  </header>
 
-</div>
+  <!-- VISTA DASHBOARD -->
+  <main id="dashboard-view">
 
-<script src="/static/leaflet.js"></script>
-<script src="/static/scrcpy-bundle.js"></script>
-<script src="/app.js"></script>
+    <div class="section-title">
+      <span>Dispositivos Online</span>
+
+      <button
+        id="btn-connect-all"
+        class="btn primary"
+        type="button"
+      >
+        Ligar Todos &amp; Ver Grelha
+      </button>
+    </div>
+
+    <div class="device-grid" id="online-grid">
+      <div class="history-empty">
+        A carregar dispositivos...
+      </div>
+    </div>
+
+    <div class="section-title">
+      <span>Dispositivos Offline (Registados)</span>
+    </div>
+
+    <div class="device-grid" id="offline-grid">
+      <div class="history-empty">
+        Sem registos.
+      </div>
+    </div>
+
+  </main>
+
+  <!-- VISTA MULTIVIEW -->
+  <section id="grid-view">
+
+    <div id="grid-header">
+
+      <button
+        id="btn-back-grid"
+        class="btn"
+        type="button"
+      >
+        ← Voltar ao Dashboard
+      </button>
+
+      <div>
+        <span>Disposição:</span>
+
+        <button
+          id="btn-grid-size-1"
+          class="btn"
+          type="button"
+        >
+          1x
+        </button>
+
+        <button
+          id="btn-grid-size-2"
+          class="btn"
+          type="button"
+        >
+          2x
+        </button>
+
+        <button
+          id="btn-grid-size-3"
+          class="btn"
+          type="button"
+        >
+          3x
+        </button>
+      </div>
+
+    </div>
+
+    <div id="debug-panel"></div>
+
+    <div id="grid-container"></div>
+
+  </section>
+
+  <!-- VISTA DETALHE -->
+  <section id="detail-view">
+
+    <!-- COLUNA ESQUERDA: INFORMAÇÃO E CONTROLOS -->
+    <div class="panel" id="info-panel">
+
+      <h3>Controlo e Informação</h3>
+
+      <button id="btn-back" type="button">
+        ← Voltar ao Dashboard
+      </button>
+
+      <div id="device-info-content">
+        <div>A selecionar dispositivo...</div>
+      </div>
+
+      <h3>Controlos do Dispositivo</h3>
+
+      <div class="controls-grid">
+
+        <button
+          class="btn"
+          id="btn-back-key"
+          type="button"
+        >
+          ◀ Voltar
+        </button>
+
+        <button
+          class="btn"
+          id="btn-home-key"
+          type="button"
+        >
+          ⌂ Início
+        </button>
+
+        <button
+          class="btn"
+          id="btn-power-key"
+          type="button"
+        >
+          ⏻ Ecrã
+        </button>
+
+        <button
+          class="btn"
+          id="btn-swipe-up"
+          type="button"
+        >
+          ↑ Swipe
+        </button>
+
+        <button
+          class="btn"
+          id="btn-swipe-down"
+          type="button"
+        >
+          ↓ Swipe
+        </button>
+
+      </div>
+
+      <div class="input-row">
+
+        <input
+          type="password"
+          id="unlock-input"
+          placeholder="PIN / Password"
+          autocomplete="off"
+        >
+
+        <button
+          class="btn primary"
+          id="btn-unlock"
+          type="button"
+        >
+          Enviar
+        </button>
+
+      </div>
+
+      <h3>Log de Instalação</h3>
+
+      <div id="install-log">
+        A aguardar...
+      </div>
+
+    </div>
+
+    <!-- COLUNA CENTRAL: SCRCPY -->
+    <div class="panel" id="video-panel">
+
+      <h3>Ecrã do Dispositivo</h3>
+
+      <div id="video-container">
+
+        <span id="video-hint">
+          Stream indisponível
+        </span>
+
+      </div>
+
+    </div>
+
+    <!-- COLUNA DIREITA: MAPA E HISTÓRICO -->
+    <div class="panel" id="map-panel">
+
+      <h3>Mapa e Histórico de Localização</h3>
+
+      <!-- MAPA LEAFLET -->
+      <div id="map-container"></div>
+
+      <!-- LEGENDA DO MAPA -->
+      <div class="map-legend">
+
+        <span class="legend-item">
+          <span class="legend-dot history"></span>
+          Histórico 72h
+        </span>
+
+        <span class="legend-item">
+          <span class="legend-dot realtime"></span>
+          Tempo real
+        </span>
+
+        <span class="legend-item">
+          <span class="legend-dot gps"></span>
+          GPS
+        </span>
+
+        <span class="legend-item">
+          <span class="legend-dot ip"></span>
+          IP aproximado
+        </span>
+
+      </div>
+
+      <!-- DETALHES IP2LOCATION -->
+      <div id="ip-details">
+
+        <span id="ip-location-info"></span>
+
+      </div>
+
+      <!-- CABEÇALHO DO HISTÓRICO -->
+      <div id="history-heading">
+
+        <span>Histórico de Localização</span>
+
+        <small>Últimas 72 horas</small>
+
+      </div>
+
+      <!-- LISTA CRONOLÓGICA -->
+      <div id="history-list">
+
+        <div class="history-empty">
+          Sem histórico de localização.
+        </div>
+
+      </div>
+
+    </div>
+
+  </section>
+
+  <!-- BIBLIOTECAS -->
+  <script src="/static/leaflet.js"></script>
+  <script src="/static/scrcpy-bundle.js"></script>
+
+  <!-- APLICAÇÃO -->
+  <script src="/app.js"></script>
+
+  <!-- TEMA -->
+  <script>
+    (() => {
+      const themeButton = document.getElementById('theme-toggle');
+
+      if (!themeButton) return;
+
+      themeButton.addEventListener('click', () => {
+        const root = document.documentElement;
+
+        const currentTheme =
+          root.getAttribute('data-theme') || 'dark';
+
+        const nextTheme =
+          currentTheme === 'dark' ? 'light' : 'dark';
+
+        root.setAttribute('data-theme', nextTheme);
+
+        themeButton.textContent =
+          nextTheme === 'dark'
+            ? 'Alternar Tema'
+            : 'Ativar Tema Escuro';
+
+        if (window.map && typeof window.map.invalidateSize === 'function') {
+          window.map.invalidateSize();
+        }
+      });
+    })();
+  </script>
+
 </body>
 </html>

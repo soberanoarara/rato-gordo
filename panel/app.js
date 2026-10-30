@@ -64,246 +64,6 @@ async function checkSession() {
   } catch { return false; }
 }
 
-
-   
-// ==== INJETAR CSS ====
-document.documentElement.setAttribute('data-theme', 'dark');
-const style = document.createElement('style');
-style.textContent = `
-  :root { --bg: #0a0f1a; --surface: #111827; --border: #1f2937; --primary: #00ffff; --text: #e5e7eb; --muted: #9ca3af; --success: #10b981; --danger: #ef4444; }
-  body { background: var(--bg); color: var(--text); margin: 0; font-family: system-ui; overflow: hidden; } /* overflow: hidden remove scroll da página */
-  header { display:flex; padding:12px 24px; background:var(--surface); border-bottom:2px solid var(--primary); align-items:center; }
-  
-  /* DASHBOARD */
-  #dashboard-view { padding: 24px; height: calc(100vh - 60px); overflow-y: auto; }
-  .section-title { color: var(--primary); border-bottom: 1px solid var(--border); padding-bottom: 8px; margin: 24px 0 16px 0; text-transform: uppercase; display: flex; justify-content: space-between; align-items: center; }
-  .device-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; }
-  .device-card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 16px; cursor: pointer; transition: 0.2s; }
-  .device-card:hover { border-color: var(--primary); box-shadow: 0 0 15px rgba(0,255,255,0.15); }
-  .device-card.online { border-left: 4px solid var(--success); }
-  .device-card.offline { border-left: 4px solid var(--danger); opacity: 0.7; cursor: default; }
-  .device-header { display: flex; justify-content: space-between; margin-bottom: 12px; }
-  .device-status { font-size: 11px; padding: 2px 8px; border-radius: 12px; border: 1px solid; }
-  .device-status.online { color: var(--success); }
-  .device-status.offline { color: var(--danger); }
-  .device-info { font-size: 12px; color: var(--muted); margin-bottom: 8px; }
-  .device-loc { font-size: 11px; color: var(--primary); }
-  
-  /* DETALHE INDIVIDUAL */
-  #detail-view { display: none; height: calc(100vh - 60px); padding: 16px; gap: 16px; grid-template-columns: 300px 1fr 40%; box-sizing: border-box; }
-  #detail-view.active { display: grid; }
-  .panel { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; display: flex; flex-direction: column; overflow: hidden; }
-  .panel h3 { font-size: 13px; margin: 0; padding: 12px; border-bottom: 1px solid var(--border); color: var(--primary); text-transform: uppercase; }
-  #install-log { flex: 1; background: #000; color: #0f0; font-family: monospace; font-size: 11px; padding: 8px; overflow-y: auto; white-space: pre-wrap; margin-bottom: 8px; border-radius: 4px; }
-  #video-container { flex: 1; display: flex; align-items: center; justify-content: center; background:#000; position: relative;}
-  #video-container canvas { max-width: 100%; max-height: 100%; object-fit: contain; cursor: crosshair; }
-  #map-container { flex: 1; background: #000; min-height: 200px; }
-  #history-list { height: 150px; overflow-y: auto; font-family: monospace; font-size: 11px; padding: 8px; }
-  .history-item { display: flex; justify-content: space-between; padding: 4px 0; border-bottom: 1px solid var(--border); }
-  
-  /* CONTROLES */
-  .controls-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; padding: 12px; }
-  .btn { background: #21262d; color: var(--text); border: 1px solid var(--border); border-radius: 4px; padding: 8px; cursor: pointer; text-align: center; font-size: 12px; }
-  .btn:hover { background: #30363d; border-color: var(--primary); }
-  .btn.primary { background: var(--primary); color: #000; font-weight: bold; }
-  .input-row { display: flex; gap: 8px; padding: 12px; border-top: 1px solid var(--border); }
-  .input-row input { flex: 1; background: #000; color: #fff; border: 1px solid var(--border); padding: 8px; border-radius: 4px; font-family: monospace; }
-  #btn-back { cursor: pointer; background: none; border: 1px solid var(--border); color: var(--primary); padding: 4px 8px; border-radius: 4px; margin: 12px; }
-  #btn-connect-all { font-size:11px; padding:4px 8px; }
-
-  /* VISTA GRELHA (MULTIVIEW) */
-  #grid-view { 
-    display: none; 
-    height: calc(100vh - 60px); 
-    padding: 12px; 
-    flex-direction: column; 
-    box-sizing: border-box;
-  }
-  #grid-view.active { display: flex; }
-  
-  #grid-header { 
-    display: flex; 
-    justify-content: space-between; 
-    margin-bottom: 8px; 
-    align-items: center; 
-    flex-shrink: 0; 
-  }
-  
-  #user-card:hover {
-      border-color: var(--primary);
-      box-shadow: 0 0 10px rgba(0, 255, 255, 0.2);
-  }
-
-  #btn-logout:hover {
-      background: #cc0000; /* Vermelho mais escuro no hover */
-  }
-  
-  #debug-panel {
-    height: 50px;
-    background: #000;
-    color: #0f0;
-    font-family: monospace;
-    font-size: 10px;
-    overflow-y: auto;
-    padding: 4px 8px;
-    border: 1px solid var(--border);
-    border-radius: 4px;
-    margin-bottom: 8px;
-    flex-shrink: 0;
-  }
-
-  #grid-container { 
-    flex: 1; 
-    display: grid; 
-    gap: 8px; 
-    overflow: hidden; 
-    min-height: 0; 
-    /* grid-template-columns é controlado via JS */
-  }
-  
-  .grid-card { 
-    background: var(--surface); 
-    border: 2px solid var(--border); 
-    border-radius: 8px; 
-    display: flex; 
-    flex-direction: column; 
-    cursor: pointer; 
-    transition: 0.2s;
-    min-height: 0;
-  }
-  .grid-card.selected { border-color: var(--primary); box-shadow: 0 0 15px rgba(0,255,255,0.3); }
-  
-  .grid-card-header { 
-    padding: 4px 8px; 
-    background: #000; 
-    border-bottom: 1px solid var(--border); 
-    display: flex; 
-    justify-content: space-between; 
-    font-size: 11px;
-    flex-shrink: 0;
-  }
-  
-  
-  .grid-video { 
-    flex: 1; 
-    background: #000; 
-    position: relative; 
-    overflow: hidden;
-    min-height: 0;
-  }
-  
-  .grid-video canvas { 
-    position: absolute;
-    top: 0; left: 0; right: 0; bottom: 0;
-    width: 100%; 
-    height: 100%; 
-    object-fit: contain; 
-  }
-  
-  .grid-info {
-    padding: 4px 8px;
-    font-size: 10px;
-    font-family: monospace;
-    color: var(--muted);
-    border-top: 1px solid var(--border);
-    flex-shrink: 0;
-  }
-`;
-document.head.appendChild(style);
-
-// ==== CONSTRUIR DOM ====
-document.body.innerHTML = `
-<div id="login-screen" style="display:flex;">
-  <div class="login-box">
-    <h2>ACESSO RESTRITO</h2>
-    <input type="text" id="username" placeholder="Utilizador" autocomplete="username">
-    <input type="password" id="password" placeholder="Password" autocomplete="current-password">
-    <button id="btn-login">ENTRAR</button>
-    <div id="login-error" style="display:none;">Credenciais inválidas</div>
-  </div>
-</div>
-<header>
-  <h1 style="font-size:18px; margin:0; color:var(--primary); text-transform:uppercase;">MANIFESTY-ONE</h1>
-  <span class="badge" id="conn-badge" style="margin-left:12px; padding:4px 12px; background:var(--border); border-radius:4px; font-size:12px;">a ligar…</span>
-  <span class="badge" id="clock" style="margin-left:12px; padding:4px 12px; background:var(--border); border-radius:4px; font-size:12px;"></span>
-  
-  
-<!-- NOVO CARD DE UTILIZADOR -->
-  <div id="user-card" style="margin-left: auto; display: flex; align-items: center; gap: 12px; padding: 4px 12px; background: var(--surface); border: 1px solid var(--border); border-radius: 4px;">
-    <span style="color: var(--primary); font-family: var(--font-mono); font-size: 13px;">
-      aidem
-    </span>
-    <button id="btn-logout" style="background: var(--danger); color: #fff; border: none; padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: bold;">
-      Sair
-    </button>
-  </div>
-</header>
-
-<div id="dashboard-view">
-  <div class="section-title">
-    Dispositivos Online 
-    <button id="btn-connect-all" class="btn primary">Ligar Todos & Ver Grelha</button>
-  </div>
-  <div class="device-grid" id="online-grid"></div>
-  <div class="section-title">Dispositivos Offline (Registados)</div>
-  <div class="device-grid" id="offline-grid"></div>
-</div>
-
-<div id="grid-view">
-  <div id="grid-header">
-    <button id="btn-back-grid" class="btn">← Voltar ao Dashboard</button>
-    
-    <div style="display:flex; gap:8px; align-items:center;">
-        <span style="color:var(--muted); font-size:12px;">Disposição:</span>
-        <button id="btn-grid-size-1" class="btn">1x</button>
-        <button id="btn-grid-size-2" class="btn">2x</button>
-        <button id="btn-grid-size-3" class="btn">3x</button>
-    </div>
-  </div>
-  
-  <div id="debug-panel"></div>
-  <div id="grid-container"></div>
-</div>
-
-
-<div id="detail-view">
-  <div class="panel" style="display:flex; flex-direction:column;">
-    <h3>Controlo e Info</h3>
-    <button id="btn-back">← Voltar ao Dashboard</button>
-    <div id="device-info-content" style="padding:12px; font-family:monospace; font-size:12px;"></div>
-    
-    <div class="controls-grid">
-      <button class="btn" id="btn-back-key">◀ Voltar</button>
-      <button class="btn" id="btn-home-key">⌂ Início</button>
-      <button class="btn" id="btn-power-key">⏻ Ecrã</button>
-      <button class="btn" id="btn-swipe-up">↑ Swipe</button>
-      <button class="btn" id="btn-swipe-down">↓ Swipe</button>
-    </div>
-
-    <div class="input-row">
-      <input type="password" id="unlock-input" placeholder="PIN / Password">
-      <button class="btn" id="btn-unlock">Enviar</button>
-    </div>
-
-    <h3>Log de Instalação</h3>
-    <div id="install-log">A aguardar...</div>
-  </div>
-  <div class="panel">
-    <h3>Ecrã do Dispositivo</h3>
-    <div id="video-container"><span id="video-hint" style="color:var(--muted);">Stream indisponível</span></div>
-  </div>
-  <div class="panel">
-    <h3>Mapa e Histórico</h3>
-    <div id="map-container"></div>
-    <!-- NOVO: Painel de detalhes do IP -->
-    <div id="ip-details" style="padding: 8px; background: var(--surface); border-top: 1px solid var(--border); font-size: 11px; color: var(--muted); display: none;">
-    <span id="ip-location-info"></span>
-    </div>
-    <div id="history-list"></div>
-  </div>
-</div>
-`;
-
 const connBadge = document.getElementById('conn-badge');
 const clockEl = document.getElementById('clock');
 setInterval(() => clockEl.textContent = new Date().toLocaleTimeString(), 1000);
@@ -343,6 +103,7 @@ function showGrid() {
 
 async function showDetail(serial) {
   currentView = 'detail';
+  setTimeout(() => map.invalidateSize(), 200);
   document.getElementById('dashboard-view').style.display = 'none';
   document.getElementById('grid-view').classList.remove('active');
   document.getElementById('detail-view').classList.add('active');
@@ -440,7 +201,7 @@ function startGridLogs() {
                     const card = document.getElementById(`grid-card-${d.serial}`);
                     if (card) {
                         const infoDiv = card.querySelector('.grid-info');
-                        if (infoDiv && d.last_olocation) {
+                        if (infoDiv && d.last_location) {
                             infoDiv.innerHTML = `${d.brand || '?'} | Android ${d.android_version || '?'}<br>Fonte: ${d.last_location.source} | Lat: ${d.last_location.lat.toFixed(4)} Lon: ${d.last_location.lon.toFixed(4)}`;
                         }
                     }
@@ -451,6 +212,16 @@ function startGridLogs() {
             }
         }
     }, 5000);
+}
+let refreshThrottle = null;
+
+function refreshDevicesThrottled() {
+  if (refreshThrottle) return;
+
+  refreshThrottle = setTimeout(() => {
+    refreshThrottle = null;
+    refreshDevices();
+  }, 1000);
 }
 
 function renderGrid() {
@@ -595,176 +366,200 @@ function renderDeviceInfo(serial) {
 }
 
 
-function connectLocations() {
-  if (window.locWs) window.locWs.close();
-  const locWs = new WebSocket(wsUrl('/ws/location'));
-  window.locWs = locWs;
-  
-  locWs.onopen = () => locWs.send(TOKEN);
-  locWs.onmessage = (e) => {
-    let d;
-    try { d = JSON.parse(e.data); } catch { return; }
-
-    // Só desenha se for o dispositivo ativo
-    if (!activeTarget || d.device !== activeTarget) return;
-
-    // 1. Verifica se já existe o marcador de tempo real
-    if (!markers['rt_' + d.device]) {
-      markers['rt_' + d.device] = L.marker([d.lat, d.lon], { icon: iconRealtime }).addTo(map).bindPopup(`Tempo Real: ${d.device}`);
-      
-      // Faz zoom para o dispositivo
-      map.flyTo([d.lat, d.lon], 16, { duration: 1.5 });
-      
-      // Inicia a polyline de rastro em tempo real
-      markers['trace_' + d.device] = L.polyline([], {color: '#00ffff', weight: 4}).addTo(map);
-    } else {
-      // 3. Se já existe, atualiza a posição
-      markers['rt_' + d.device].setLatLng([d.lat, d.lon]);
-      
-      // Adiciona o ponto ao rastro
-      markers['trace_' + d.device].addLatLng([d.lat, d.lon]);
-      
-      // Move o mapa suavemente para acompanhar o movimento
-      map.panTo([d.lat, d.lon]);
-    }
-
-    // 5. Mostra os dados do IP2Location se a fonte for "ip"
-    if (d.source === 'ip' && d.ip_details) {
-        document.getElementById('ip-details').style.display = 'block';
-        document.getElementById('ip-location-info').innerHTML = `
-            <b>Fonte:</b> IP2Location <br>
-            <b>Cidade:</b> ${d.ip_details.city} | <b>Região:</b> ${d.ip_details.region} | <b>País:</b> ${d.ip_details.country}
-        `;
-    } else {
-        document.getElementById('ip-details').style.display = 'none';
-    }
-
-    refreshDevicesThrottled();
-  };
-  
-  locWs.onclose = () => setTimeout(connectLocations, 2000);
-}
 
 
 function initMap() {
   if (map) return;
-  const maputoBounds = [[-26.2, 32.0], [-24.8, 33.2]];
-  map = L.map('map-container', { maxBounds: maputoBounds, minZoom: 9 }).setView([-25.9655, 32.5832], 10);
+
+  map = L.map('map-container').setView([0, 0], 2);
+
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    attribution: '&copy; OpenStreetMap', maxZoom: 19
+    attribution: '&copy; OpenStreetMap',
+    maxZoom: 19
   }).addTo(map);
 }
-
 
 
 // ==== MAPA E HISTÓRICO ====
 async function loadHistory(serial) {
   try {
-    const r = await authFetch(`/api/device/${serial}/history`);
-    if (!r.ok) return;
-    const j = await r.json();
-    
-    // Limpa APENAS as camadas de histórico (não apaga o tempo real)
-    if (markers[serial + '_poly']) map.removeLayer(markers[serial + '_poly']);
-    if (markers[serial + '_markers']) {
-        markers[serial + '_markers'].forEach(m => map.removeLayer(m));
+    const response = await authFetch(
+      `/api/device/${encodeURIComponent(serial)}/history`
+    );
+
+    if (!response.ok) return;
+
+    const data = await response.json();
+
+    if (markers[serial + '_poly']) {
+      map.removeLayer(markers[serial + '_poly']);
     }
 
-    const histEl = document.getElementById('history-list');
-    histEl.innerHTML = '';
-    const pts = [];
-    
-    // Filtra os últimos 3 dias
-    const threeDaysAgo = Date.now() / 1000 - (3 * 24 * 60 * 60);
+    if (markers[serial + '_markers']) {
+      markers[serial + '_markers'].forEach(marker => map.removeLayer(marker));
+    }
+
+    const list = document.getElementById('history-list');
+    list.replaceChildren();
+
+    const cutoff = Date.now() / 1000 - 72 * 60 * 60;
+
+    const history = (data.history || [])
+      .filter(h => {
+        const timestamp = Number(h.ts);
+        return Number.isFinite(timestamp) &&
+          timestamp >= cutoff &&
+          Number.isFinite(Number(h.lat)) &&
+          Number.isFinite(Number(h.lon));
+      })
+      .sort((a, b) => Number(a.ts) - Number(b.ts));
+
+    const points = [];
     const historyMarkers = [];
 
-    j.history.forEach(h => {
-      if (h.ts < threeDaysAgo) return; 
+    history.forEach(h => {
+      const position = [Number(h.lat), Number(h.lon)];
+      const date = new Date(Number(h.ts) * 1000);
+      const dateText = date.toLocaleString();
 
-      pts.push([h.lat, h.lon]);
-      
-      // Cria o marcador vermelho no mapa com tooltip
-      const marker = L.marker([h.lat, h.lon], { icon: iconHistory }).addTo(map);
-      const dateStr = new Date(h.ts * 1000).toLocaleString();
-      marker.bindTooltip(`<b>${dateStr}</b><br>Fonte: ${h.source}`, { direction: 'top' });
+      points.push(position);
+
+      const marker = L.marker(position, {
+        icon: iconHistory
+      }).addTo(map);
+
+      marker.bindTooltip(
+        `<b>${dateText}</b><br>Fonte: ${h.source || 'gps'}`,
+        { direction: 'top' }
+      );
+
       historyMarkers.push(marker);
 
-      // Adiciona à lista lateral
-      const el = document.createElement('div');
-      el.className = 'history-item';
-      el.style.color = h.source === 'ip' ? 'var(--warn)' : 'var(--success)'; 
-      el.innerHTML = `<span>${h.source.toUpperCase()}</span><span>${h.distance ? '+' + h.distance.toFixed(0) + 'm' : '-'}</span>`;
-      histEl.appendChild(el);
+      const item = document.createElement('div');
+      item.className = 'history-item';
+
+      const timestamp = document.createElement('span');
+      timestamp.textContent = dateText;
+
+      const source = document.createElement('span');
+      source.textContent = String(h.source || 'gps').toUpperCase();
+
+      item.append(timestamp, source);
+
+      item.addEventListener('click', () => {
+        map.setView(position, 15);
+        marker.openPopup();
+      });
+
+      list.appendChild(item);
+
+      if (h.source === 'ip' && h.ip_details) {
+        const details = h.ip_details;
+
+        document.getElementById('ip-details').style.display = 'block';
+
+        document.getElementById('ip-location-info').textContent =
+          `Fonte: IP2Location (aproximada) | Cidade: ${details.city || '—'} | Região: ${details.region || '—'} | País: ${details.country || '—'}`;
+      }
     });
 
     markers[serial + '_markers'] = historyMarkers;
 
-    if (pts.length > 0) {
-      // Desenha a linha do tempo (rastro vermelho)
-      markers[serial + '_poly'] = L.polyline(pts, {color: '#ef4444', weight: 3, opacity: 0.7, dashArray: '5, 10'}).addTo(map);
-      
-      // Se não houver um marcador de tempo real, faz zoom para o histórico
+    if (points.length) {
+      markers[serial + '_poly'] = L.polyline(points, {
+        color: '#ef4444',
+        weight: 3,
+        opacity: 0.8,
+        dashArray: '5, 8'
+      }).addTo(map);
+
       if (!markers['rt_' + serial]) {
-          map.fitBounds(markers[serial + '_poly'].getBounds(), {padding: [30, 30]});
+        map.fitBounds(
+          markers[serial + '_poly'].getBounds(),
+          { padding: [30, 30], maxZoom: 15 }
+        );
       }
+    } else {
+      list.textContent = 'Sem histórico nas últimas 72 horas.';
     }
-  } catch (e) { console.error(e); }
+
+  } catch (error) {
+    console.error('Erro ao carregar histórico:', error);
+  }
 }
 
 function connectLocations() {
-  if (window.locWs) window.locWs.close();
-  const locWs = new WebSocket(wsUrl('/ws/location'));
-  window.locWs = locWs;
-  
-  locWs.onopen = () => locWs.send(TOKEN);
-  locWs.onmessage = (e) => {
+  if (window.locWs) {
+    window.locWs.onclose = null;
+    window.locWs.close();
+  }
+
+  const scheme = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const socket = new WebSocket(`${scheme}//${location.host}/ws/location`);
+  window.locWs = socket;
+
+  socket.onopen = () => {
+    if (TOKEN) socket.send(TOKEN);
+  };
+
+  socket.onmessage = (event) => {
     let d;
-    try { d = JSON.parse(e.data); } catch { return; }
 
-    if (!activeTarget || d.device !== activeTarget) return;
-
-    // 1. Atualiza ou cria o marcador de tempo real (AZUL)
-    if (!markers['rt_' + d.device]) {
-      // Cria o ícone azul
-      markers['rt_' + d.device] = L.marker([d.lat, d.lon], { icon: iconRealtime, zIndexOffset: 1000 }).addTo(map).bindPopup(`Tempo Real: ${d.device}`);
-      
-      // Faz zoom para o dispositivo
-      map.flyTo([d.lat, d.lon], 16, { duration: 1.5 });
-      
-      // Inicia a polyline de rastro em tempo real (linha azul)
-      markers['trace_' + d.device] = L.polyline([[d.lat, d.lon]], {color: '#00ffff', weight: 4}).addTo(map);
-    } else {
-      // 3. Se já existe, atualiza a posição
-      markers['rt_' + d.device].setLatLng([d.lat, d.lon]);
-      
-      // Adiciona o ponto ao rastro
-      markers['trace_' + d.device].addLatLng([d.lat, d.lon]);
-      
-      // Move o mapa suavemente para acompanhar o movimento
-      map.panTo([d.lat, d.lon]);
-    }
-
-    // 5. Mostra os dados do IP2Location
-    if (d.source === 'ip' && d.ip_details) {
-        const detailsDiv = document.getElementById('ip-details');
-        if (detailsDiv) {
-            detailsDiv.style.display = 'block';
-            document.getElementById('ip-location-info').innerHTML = `
-                <b>Fonte:</b> IP2Location <br>
-                <b>Cidade:</b> ${d.ip_details.city} | <b>Região:</b> ${d.ip_details.region} | <b>País:</b> ${d.ip_details.country}
-            `;
-        }
-    } else {
-        const detailsDiv = document.getElementById('ip-details');
-        if (detailsDiv) detailsDiv.style.display = 'none';
+    try {
+      d = JSON.parse(event.data);
+    } catch {
+      return;
     }
 
     refreshDevicesThrottled();
-  };
-  
-  locWs.onclose = () => setTimeout(connectLocations, 2000);
-}
 
+    if (!activeTarget || d.device !== activeTarget || !map) return;
+
+    const lat = Number(d.lat);
+    const lon = Number(d.lon);
+
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) return;
+
+    const position = [lat, lon];
+    const markerKey = 'rt_' + d.device;
+    const traceKey = 'trace_' + d.device;
+
+    if (!markers[markerKey]) {
+      markers[markerKey] = L.marker(position, {
+        icon: iconRealtime,
+        zIndexOffset: 1000
+      }).addTo(map);
+
+      markers[traceKey] = L.polyline([position], {
+        color: '#00ffff',
+        weight: 4
+      }).addTo(map);
+
+      map.flyTo(position, 15, { duration: 1.2 });
+    } else {
+      const previous = markers[markerKey].getLatLng();
+
+      markers[markerKey].setLatLng(position);
+
+      if (previous.lat !== lat || previous.lng !== lon) {
+        markers[traceKey].addLatLng(position);
+      }
+    }
+
+    if (d.source === 'ip' && d.ip_details) {
+      const details = d.ip_details;
+
+      document.getElementById('ip-details').style.display = 'block';
+
+      document.getElementById('ip-location-info').textContent =
+        `Fonte: IP2Location (aproximada) | Cidade: ${details.city || '—'} | Região: ${details.region || '—'} | País: ${details.country || '—'}`;
+    }
+  };
+
+  socket.onclose = () => {
+    if (TOKEN) setTimeout(connectLocations, 2500);
+  };
+}
 
 
 async function refreshDevices() {
@@ -892,6 +687,9 @@ async function startApp() {
             }
         } catch (e) { console.warn("Sem token para WebSocket de vídeo"); }
         init(); // Chama o init aqui, e SÓ aqui.
+        await refreshDevices();
+	connectLocations();
+	setInterval(refreshDevices, 5000);
     } else {
         // Sem sessão: mostra o login
         document.getElementById('login-screen').style.display = 'flex';

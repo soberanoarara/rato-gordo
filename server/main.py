@@ -30,9 +30,10 @@ from database import add_location  #
 from database import authenticate_user
 from fastapi import Response
 import secrets
-from datetime import datetime, timedelta
-from typing import Optional
 import time
+import logging
+import json
+from datetime import datetime, timedelta, timezone
 
 BASE_DIR = Path(__file__).resolve().parent
 PANEL_DIR = BASE_DIR.parent / "panel"
@@ -41,8 +42,38 @@ ADB_DISCOVERY_TIMEOUT = 3.0
 SERIAL_RE = re.compile(r"^[A-Za-z0-9._:\-]{1,64}$")
 
 
+# Estado transitório para o fallback; o histórico em si é persistido no SQLite.
+GPS_STALE_AFTER_SECONDS = 30
+IP_LOOKUP_MIN_INTERVAL_SECONDS = 300
+FALLBACK_CHECK_INTERVAL_SECONDS = 10
+LAST_GPS: dict[str, float] = {}
+LAST_IP: dict[str, str] = {}
+LAST_IP_LOOKUP: dict[str, float] = {}
+LAST_IP_DETAILS: dict[str, dict] = {}
+IP_LOCATION_CACHE: dict[str, tuple[float, dict]] = {}
+IP_LOCATION_CACHE_TTL = 300
+
+
+async def lookup_ip_cached(ip: str) -> Optional[dict]:
+    """Reutiliza resultados recentes de IP2Location."""
+
+    now = time.monotonic()
+    cached = IP_LOCATION_CACHE.get(ip)
+
+    if cached and now - cached[0] < IP_LOCATION_CACHE_TTL:
+        return cached[1]
+
+    result = await get_location_by_ip(ip)
+
+    if result:
+        IP_LOCATION_CACHE[ip] = (now, result)
+
+    return result
+
+
 @asynccontextmanager
 async def lifespan(app):
+    """Inicializa recursos e mantém tarefas de limpeza/fallback num único ciclo."""
     init_db()
 
     async def _purge():
@@ -50,14 +81,19 @@ async def lifespan(app):
             purge_expired()
             await asyncio.sleep(300)
 
-    purge_task = asyncio.create_task(_purge())
-    yield
-    purge_task.cancel()
-    await registry.stop_all()
+    purge_task = asyncio.create_task(_purge(), name="purge-expired-tokens")
+    fallback_task = asyncio.create_task(_ip_fallback_task(), name="ip-location-fallback")
+    try:
+        yield
+    finally:
+        for task in (purge_task, fallback_task):
+            task.cancel()
+        await asyncio.gather(purge_task, fallback_task, return_exceptions=True)
+        await registry.stop_all()
+
 
 
 app = FastAPI(title="MAD-Lab", lifespan=lifespan)
-
 
 def require_auth(authorization: str = Header(default="")) -> str:
     token = authorization.removeprefix("Bearer ").strip()
@@ -67,28 +103,73 @@ def require_auth(authorization: str = Header(default="")) -> str:
 
 
 async def location_sink(
-    serial: str, lat: float, lon: float, acc: float, source: str = "gps"
+    serial: str,
+    lat: float,
+    lon: float,
+    acc: float,
+    source: str = "gps",
+    ip_details: Optional[dict] = None,
 ) -> None:
-    # Tenta obter o último IP conhecido deste dispositivo (se foi enviado por IP)
-    db_dev = get_registered_devices()
-    ip_publico = None
-    for d in db_dev:
-        if d.serial == serial:
-            # Se a fonte for IP, ou se já tivermos o IP guardado
-            # (Neste caso, a fonte IP já envia o IP via store)
-            pass
+    """Persiste e transmite uma localização mantendo a fonte/metadados."""
+    now = time.time()
+    if source == "gps":
+        LAST_GPS[serial] = now
 
-    data = store.upsert(
-        {"device": serial, "lat": lat, "lon": lon, "accuracy": acc, "source": source}
-    )
+    details = ip_details or (LAST_IP_DETAILS.get(serial) if source == "ip" else None)
+    data = store.upsert({
+        "device": serial,
+        "lat": float(lat),
+        "lon": float(lon),
+        "accuracy": float(acc) if acc is not None else None,
+        "source": source,
+        **({"ip_details": details} if details else {}),
+    })
+    if details:
+        data["ip_details"] = details
+    add_location(serial, float(lat), float(lon), source=source, ip_details=details)
     await store.broadcast(data)
+    
+async def _lookup_ip_and_publish(serial: str, ip: str) -> bool:
+    """Consulta IP2Location e persiste/publica a posição aproximada."""
+
+    now = time.monotonic()
+
+    if now - LAST_IP_LOOKUP.get(serial, 0) < IP_LOOKUP_MIN_INTERVAL_SECONDS:
+        return False
+
+    LAST_IP_LOOKUP[serial] = now
 
     try:
-        from database import add_location
+        loc = await lookup_ip_cached(ip)
 
-        add_location(serial, lat, lon, source=source)
-    except Exception as e:
-        print(f"Erro ao guardar no SQLite: {e}")
+        if not loc:
+            return False
+
+        details = loc.get("details") or {
+            key: value
+            for key, value in loc.items()
+            if key not in ("lat", "lon")
+        }
+
+        LAST_IP_DETAILS[serial] = details
+
+        await location_sink(
+            serial=serial,
+            lat=loc["lat"],
+            lon=loc["lon"],
+            acc=5000.0,
+            source="ip",
+            ip_details=details,
+        )
+
+        logging.info("Localização IP publicada para %s", serial)
+        return True
+
+    except Exception:
+        logging.exception(
+            "Falha ao consultar IP2Location para %s", serial
+        )
+        return False
 
 
 async def _enumerate_adb_devices() -> list[str]:
@@ -142,54 +223,34 @@ async def auth(req: TokenRequest):
     return TokenResponse(token=token, expires_at=expiry)
 
 
-# Dicionário para guardar o último timestamp de GPS e último IP por dispositivo
-LAST_GPS: dict[str, float] = {}
-LAST_IP: dict[str, str] = {}
 
+# ---------- telemetria de localização ----------
 @app.post("/api/location")
 async def post_location(loc: LocationReport, _: str = Depends(require_auth)):
-    data = store.upsert(loc.model_dump())
-    await store.broadcast(data)
-    add_location(loc.device, loc.lat, loc.lon, source=loc.source)
-    
-    # --- NOVO: Lógica de Fallback para IP ---
-    if loc.source == "gps":
+    payload = loc.model_dump()
+    source = (payload.get("source") or "gps").lower()
+    if source == "gps" and payload.get("ip_publico"):
+        LAST_IP[loc.device] = str(payload["ip_publico"]).strip()
+    if source == "gps":
         LAST_GPS[loc.device] = time.time()
-        if loc.ip_publico:
-            LAST_IP[loc.device] = loc.ip_publico
+    await location_sink(loc.device, loc.lat, loc.lon,
+                        payload.get("accuracy") or 0.0, source=source)
     return {"ok": True}
+
 
 # --- NOVO: Tarefa em background para verificar GPS silencioso ---
 async def _ip_fallback_task():
+    """Usa IP conhecido apenas após 30 s sem GPS e sem repetir consultas continuamente."""
     while True:
-        await asyncio.sleep(10) # Verifica a cada 10 segundos
+        await asyncio.sleep(FALLBACK_CHECK_INTERVAL_SECONDS)
         now = time.time()
-        for serial, last_gps_ts in list(LAST_GPS.items()):
-            if now - last_gps_ts > 30: # 30 segundos sem GPS
-                ip = LAST_IP.get(serial)
-                if ip:
-                    loc = await get_location_by_ip(ip)
-                    if loc:
-                        # Envia para o store como source="ip"
-                        await location_sink(serial, loc["lat"], loc["lon"], 5000.0, source="ip")
-                        print(f"[FALLBACK] IP2Location acionado para {serial} via IP {ip}")
+        for serial, last_gps in list(LAST_GPS.items()):
+            if now - last_gps <= GPS_STALE_AFTER_SECONDS:
+                continue
+            ip = LAST_IP.get(serial)
+            if ip:
+                await _lookup_ip_and_publish(serial, ip)
 
-# Adiciona ao lifespan para iniciar a tarefa
-@asynccontextmanager
-async def lifespan(app):
-    init_db()
-    fallback_task = asyncio.create_task(_ip_fallback_task())
-    
-    async def _purge():
-        while True:
-            purge_expired()
-            await asyncio.sleep(300)
-
-    purge_task = asyncio.create_task(_purge())
-    yield
-    purge_task.cancel()
-    fallback_task.cancel() # Cancela a tarefa de fallback
-    await registry.stop_all()
 
 @app.get("/api/devices")
 async def devices(_: str = Depends(require_auth)):
@@ -412,50 +473,58 @@ async def device_logs(serial: str, _: str = Depends(require_auth)):
         return {"install": [], "server": []}
     return {"install": list(s.install_log), "server": list(s.server_log)}
 
-
 @app.get("/api/device/{serial}/history")
-async def device_history(serial: str, _: str = Depends(require_auth)):
-    hist = get_history(serial)
-    return {
-        "history": [
-            {
-                "lat": h.lat,
-                "lon": h.lon,
-                "source": h.source,
-                "ts": h.timestamp.timestamp(),
-                "distance": h.distance_from_prev,
-            }
-            for h in hist
-        ]
-    }
+async def device_history(
+    serial: str,
+    _: str = Depends(require_auth)
+):
+    hist = get_history(serial, hours=72)
 
+    history = []
+
+    for h in hist:
+        try:
+            details = (
+                json.loads(h.ip_details)
+                if h.ip_details
+                else None
+            )
+        except (ValueError, TypeError):
+            details = None
+
+        history.append({
+            "lat": h.lat,
+            "lon": h.lon,
+            "source": h.source,
+            "ts": h.timestamp.timestamp(),
+            "distance": h.distance_from_prev,
+            "ip_details": details,
+        })
+
+    return {"history": history}
 
 class IpReport(BaseModel):
     device: str
     ip: str
 
-
 @app.post("/api/location/ip")
 async def post_location_ip(report: IpReport, _: str = Depends(require_auth)):
-    loc = await get_location_by_ip(report.ip)
-    if not loc:
-        raise HTTPException(400, "Não foi possível geolocalizar o IP")
-    
-    # Envia para o store com os metadados do IP
-    data = store.upsert({
-        "device": report.device, 
-        "lat": loc["lat"], 
-        "lon": loc["lon"], 
-        "accuracy": 5000.0, 
-        "source": "ip",
-        "ip_details": {
-            "city": loc["city"],
-            "region": loc["region"],
-            "country": loc["country"]
-        }
-    })
-    await store.broadcast(data)
-    return {"ok": True, "details": loc}
+    """Recebe o IP público do dispositivo e publica localização aproximada."""
+    if not SERIAL_RE.fullmatch(report.device):
+        raise HTTPException(400, "identificador de dispositivo inválido")
+    ip = report.ip.strip()
+    if not ip:
+        raise HTTPException(422, "IP em falta")
+    LAST_IP[report.device] = ip
+    ok = await _lookup_ip_and_publish(report.device, ip)
+    if not ok:
+        raise HTTPException(400, "Não foi possível geolocalizar o IP ou a consulta está limitada")
+    details = LAST_IP_DETAILS.get(report.device, {})
+    return {"ok": True, "source": "ip", "ip_details": details}
+
+
+
+
 class LoginRequest(BaseModel):
     username: str
     password: str

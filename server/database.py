@@ -1,5 +1,5 @@
 """Base de dados SQLite para registo persistente de dispositivos e histórico."""
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Optional
 from sqlmodel import SQLModel, Field, create_engine, Session, select
 import math
@@ -27,11 +27,41 @@ class LocationHistory(SQLModel, table=True):
     lat: float
     lon: float
     source: str = "gps"
-    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    timestamp: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc),
+        index=True
+    )
     distance_from_prev: Optional[float] = None
+    ip_details: Optional[str] = None
+
+
+def migrate_location_history():
+    from sqlalchemy import inspect, text
+
+    inspector = inspect(engine)
+
+    if not inspector.has_table("locationhistory"):
+        return
+
+    columns = {
+        column["name"]
+        for column in inspector.get_columns("locationhistory")
+    }
+
+    if "ip_details" not in columns:
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    "ALTER TABLE locationhistory "
+                    "ADD COLUMN ip_details TEXT"
+                )
+            )
+
+
 
 def init_db():
     SQLModel.metadata.create_all(engine)
+    migrate_location_history()
     create_default_admin()
 
 def register_device(serial: str, brand: str, model: str, android: str):
@@ -47,41 +77,108 @@ def register_device(serial: str, brand: str, model: str, android: str):
             dev.last_seen = datetime.now(timezone.utc)
         session.commit()
 
-def add_location(serial: str, lat: float, lon: float, source: str = "gps"):
+def add_location(
+    serial: str,
+    lat: float,
+    lon: float,
+    source: str = "gps",
+    ip_details: Optional[dict] = None,
+):
+    import json
+
+    if not serial:
+        raise ValueError("O identificador do dispositivo é obrigatório.")
+
+    lat = float(lat)
+    lon = float(lon)
+
+    if not (-90 <= lat <= 90 and -180 <= lon <= 180):
+        raise ValueError("Coordenadas inválidas.")
+
     with Session(engine) as session:
         last = session.exec(
-            select(LocationHistory).where(LocationHistory.serial == serial).order_by(LocationHistory.timestamp.desc())
+            select(LocationHistory)
+            .where(LocationHistory.serial == serial)
+            .order_by(LocationHistory.timestamp.desc())
         ).first()
-        
+
         dist = None
+
         if last:
-            R = 6371000
-            phi1, phi2 = math.radians(last.lat), math.radians(lat)
+            radius = 6371000
+            phi1 = math.radians(last.lat)
+            phi2 = math.radians(lat)
             dphi = math.radians(lat - last.lat)
             dlambda = math.radians(lon - last.lon)
-            a = math.sin(dphi/2)**2 + math.cos(phi1)*math.cos(phi2)*math.sin(dlambda/2)**2
-            dist = 2 * R * math.atan2(math.sqrt(a), math.sqrt(1-a))
 
-        hist = LocationHistory(serial=serial, lat=lat, lon=lon, source=source, distance_from_prev=dist)
+            a = (
+                math.sin(dphi / 2) ** 2
+                + math.cos(phi1)
+                * math.cos(phi2)
+                * math.sin(dlambda / 2) ** 2
+            )
+
+            # Evita pequenos erros de arredondamento no cálculo.
+            a = max(0.0, min(1.0, a))
+            dist = 2 * radius * math.atan2(
+                math.sqrt(a),
+                math.sqrt(1 - a)
+            )
+
+        details_json = (
+            json.dumps(ip_details, ensure_ascii=False)
+            if ip_details is not None
+            else None
+        )
+
+        hist = LocationHistory(
+            serial=serial,
+            lat=lat,
+            lon=lon,
+            source=source,
+            distance_from_prev=dist,
+            ip_details=details_json,
+        )
+
         session.add(hist)
-        
+
         dev = session.get(DeviceRegistry, serial)
+
         if dev:
             dev.last_lat = lat
             dev.last_lon = lon
             dev.last_source = source
             dev.last_seen = datetime.now(timezone.utc)
+
         session.commit()
 
 def get_registered_devices() -> list[DeviceRegistry]:
     with Session(engine) as session:
         return list(session.exec(select(DeviceRegistry)).all())
 
-def get_history(serial: str, limit: int = 50) -> list[LocationHistory]:
+def get_history(
+    serial: str,
+    limit: int = 5000,
+    hours: Optional[int] = None,
+) -> list[LocationHistory]:
     with Session(engine) as session:
-        return list(session.exec(
-            select(LocationHistory).where(LocationHistory.serial == serial).order_by(LocationHistory.timestamp.desc()).limit(limit)
-        ).all())
+        query = select(LocationHistory).where(
+            LocationHistory.serial == serial
+        )
+
+        if hours is not None:
+            if hours <= 0:
+                raise ValueError("O período deve ser positivo.")
+
+            cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
+            query = query.where(LocationHistory.timestamp >= cutoff)
+
+        query = query.order_by(
+            LocationHistory.timestamp.asc(),
+            LocationHistory.id.asc()
+        ).limit(limit)
+
+        return list(session.exec(query).all())
 
 
 class User(SQLModel, table=True):
